@@ -12,7 +12,7 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
-public class SessionServiceImpl {
+public class SessionServiceImpl implements SessionService {
 
     private final SessionRepository sessionRepository;
 
