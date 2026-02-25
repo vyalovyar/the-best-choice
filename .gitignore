@@ -19,4 +19,5 @@ Thumbs.db
 # --- Application Config ---
 **/application-local.yml
 **/application-prod.yml
+**/application.yml
 !application.yml
