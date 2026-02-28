@@ -4,6 +4,10 @@ target/
 *.log
 *.jar
 *.war
+*.nar
+*.zip
+*.tar.gz
+*.rar
 
 # --- IDE (IntelliJ IDEA) ---
 .idea/
@@ -11,13 +15,49 @@ target/
 *.iws
 out/
 *.ipr
+*.swp
+*.swo
+*~
+
+# --- VS Code ---
+.vscode/
+*.code-workspace
+
+# --- Eclipse ---
+.classpath
+.project
+.settings/
 
 # --- Operating System ---
 .DS_Store
 Thumbs.db
+.env.local
+*.pid
 
 # --- Application Config ---
 **/application-local.yml
 **/application-prod.yml
-**/application.yml
-!application.yml
+**/application.yml.local
+
+# --- Database ---
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Build output ---
+.gradle/
+*.adoc
+
+# --- Dependencies ---
+.m2/
+node_modules/
+package-lock.json
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Environment Variables ---
+.env
+.env.local
+.env.*.local
