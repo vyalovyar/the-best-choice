@@ -15,10 +15,6 @@
     <name>session</name>
     <description>Session Service</description>
 
-    <properties>
-        <java.version>17</java.version>
-    </properties>
-
     <dependencies>
         <!-- Database -->
         <dependency>
@@ -41,7 +37,7 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
-        <!-- Lombok: scope changed to 'provided' for proper annotation processing -->
+        <!-- Lombok: версия и scope критичны для Docker -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
@@ -49,7 +45,7 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- DevTools (optional, runtime only) -->
+        <!-- DevTools -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-devtools</artifactId>
@@ -72,8 +68,8 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.11.0</version>
                 <configuration>
-                    <source>${java.version}</source>
-                    <target>${java.version}</target>
+                    <source>21</source>
+                    <target>21</target>
                     <annotationProcessorPaths>
                         <path>
                             <groupId>org.projectlombok</groupId>
@@ -84,7 +80,7 @@
                 </configuration>
             </plugin>
 
-            <!-- Spring Boot plugin (без изменений, но оставляем) -->
+            <!-- Spring Boot plugin -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
