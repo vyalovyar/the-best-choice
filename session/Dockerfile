@@ -8,11 +8,20 @@ RUN set -eux; \
 	if [ -d ./session ]; then \
 		mvn -B -pl session -am clean package -DskipTests; \
 	else \
-		apt-get update && apt-get install -y --no-install-recommends curl ca-certificates; \
 		mkdir -p /tmp/build_root; \
 		cp -r /app /tmp/build_root/session; \
+		# Create a minimal parent POM matching session/pom.xml's parent coords
+		cat > /tmp/build_root/pom.xml <<'PARENT_POM'
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+		 xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.thebestchoice</groupId>
+  <artifactId>the-best-choice</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+</project>
+PARENT_POM
 		cd /tmp/build_root; \
-		curl -fsSL -o pom.xml https://raw.githubusercontent.com/Samlabb/the-best-choice/main/pom.xml || (echo "Failed to download parent pom"; exit 1); \
 		mvn -B -pl session -am clean package -DskipTests; \
 		mkdir -p /app/session/target; \
 		cp -a /tmp/build_root/session/target/* /app/session/target/ || true; \
