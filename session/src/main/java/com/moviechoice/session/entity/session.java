@@ -18,7 +18,7 @@ public class Session {
 
     @Column(name = "code", unique = true, nullable = false, length = 10)
     private String code;
-
+//aaa
     @Column(name = "status", nullable = false, length = 20)
     @Enumerated(EnumType.STRING)
     private SessionStatus status;
