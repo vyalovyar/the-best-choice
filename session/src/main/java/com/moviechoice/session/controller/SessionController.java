@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/sessions")
@@ -35,7 +36,7 @@ public class SessionController {
 
     //300 раз скажите мне что это кринж, я знаю, добавлю дто и маппер после того, как будет готов mvp
     @GetMapping("/code")
-    public ResponseEntity<Map<String, String>> getSessionCode(@PathVariable String code){
+    public ResponseEntity<Map<String, String>> getSessionCode(@RequestParam String code) {
         return sessionService.findByCode(code).
                 map(session -> {
                     Map<String, String> res = new HashMap<>();
@@ -46,4 +47,22 @@ public class SessionController {
                 })
                 .orElse(ResponseEntity.notFound().build());
     }
+
+    @GetMapping("/{sessionId}")
+    public ResponseEntity<Map<String, String>> getSessionById(@PathVariable String sessionId) {
+        try {
+            UUID uuid = UUID.fromString(sessionId);
+            return sessionService.getSessionById(uuid)
+                    .map(session -> {
+                        Map<String, String> res = new HashMap<>();
+                        res.put("sessionId", session.getId().toString());
+                        res.put("code", session.getCode().toString());
+                        res.put("status", session.getStatus().toString());
+                        return ResponseEntity.ok(res);
+                    }).orElse(ResponseEntity.notFound().build());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
 }

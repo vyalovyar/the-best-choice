@@ -24,7 +24,7 @@ public class Vote {
     private UUID sessionId;
 
     @Column(nullable = false)
-    private UUID patricipanId;
+    private UUID participantId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "movi_id", nullable = false)

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.ZonedDateTime;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -29,6 +30,10 @@ public class SessionServiceImpl implements SessionService {
     //метод для поиска сессии по коду
     public Optional<Session> findByCode(String code){
         return sessionRepository.findByCode(code);
+    }
+    @Override
+    public Optional<Session> getSessionById(UUID sessionId) {
+        return sessionRepository.findById(sessionId);
     }
 
     //Генерерация случайного кода

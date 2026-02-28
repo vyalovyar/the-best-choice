@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: thebestchoice-db
+    environment:
+      POSTGRES_DB: movie_choice_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  session:
+    build:
+      context: .
+      dockerfile: session/Dockerfile
+    container_name: thebestchoice-session
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/movie_choice_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SERVER_PORT: 8081
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - thebestchoice-network
+
+  voting:
+    build:
+      context: .
+      dockerfile: voting/Dockerfile
+    container_name: thebestchoice-voting
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/movie_choice_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SERVER_PORT: 8082
+      TMDB_API_KEY: ${TMDB_API_KEY:-a55a61a6c703616203db28065029d325}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - thebestchoice-network
+
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    container_name: thebestchoice-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      SERVER_PORT: 8080
+      BACKEND_SESSION_URL: http://session:8081/api/sessions
+      BACKEND_VOTING_URL: http://voting:8082/api/voting
+      BACKEND_WS_URL: ws://localhost:8082/ws
+    depends_on:
+      session:
+        condition: service_healthy
+      voting:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - thebestchoice-network
+
+volumes:
+  postgres_data:
+
+networks:
+  thebestchoice-network:
+    driver: bridge

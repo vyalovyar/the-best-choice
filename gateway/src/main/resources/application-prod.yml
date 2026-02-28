@@ -1,0 +1,38 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: session-service
+          uri: ${SESSION_SERVICE_URL}  # Будет задано в Render
+          predicates:
+            - Path=/api/sessions/**
+          filters:
+            - StripPrefix=0
+            - AddResponseHeader=X-Gateway-Handled, true
+
+        - id: voting-service-rest
+          uri: ${VOTING_SERVICE_URL}
+          predicates:
+            - Path=/api/voting/**
+          filters:
+            - StripPrefix=0
+            - AddResponseHeader=X-Gateway-Handled, true
+
+        - id: voting-service-ws
+          uri: ${VOTING_SERVICE_URL}  # WebSocket через тот же URL
+          predicates:
+            - Path=/ws/**
+          filters:
+            - StripPrefix=0
+
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOriginPatterns: "*"  # Для продакшена лучше указать конкретные домены
+            allowedMethods: [GET, POST, PUT, DELETE, OPTIONS, PATCH]
+            allowedHeaders: "*"
+            allowCredentials: true
+            maxAge: 3600

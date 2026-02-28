@@ -1,0 +1,19 @@
+server:
+  port: ${PORT:8082}
+
+spring:
+  datasource:
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USER}
+    password: ${DATABASE_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        default_schema: schema_voting
+
+tmdb:
+  api-key: ${TMDB_API_KEY}
+  base-url: https://api.themoviedb.org/3
+  image-base-url: https://image.tmdb.org/t/p/w500

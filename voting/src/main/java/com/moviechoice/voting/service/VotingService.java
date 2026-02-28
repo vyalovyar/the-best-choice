@@ -31,13 +31,22 @@ public class VotingService {
 
     @Transactional(readOnly = true)
     public List<Movie> getMoviesForVote() {
-        if (refreshCache()) {
+        // Проверка кеша
+        boolean needRefresh = needsRefresh();
+        
+        if (needRefresh) {
             log.info("Кеша устарел, нужно обновить фильмы из тмдб");
             updateMoviesForTmdb();
         }
 
         return movieRepository.findAll();
 
+    }
+
+    // Отдельный метод для проверки нужнен ли рефреш
+    private boolean needsRefresh() {
+        boolean needRefresh = refreshCache();
+        return needRefresh;
     }
 
     private boolean refreshCache() {
@@ -48,13 +57,13 @@ public class VotingService {
         if (movieRepository.count() == 0) {
             return true;
         }
-        Optional<Movie> lastMovie = movieRepository.findTopByOrderByCachedAtDesc();
+        Optional<Movie> lastMovie = movieRepository.findTopByOrderByCacheAtDesc();
 
         return lastMovie.map(movie -> movie.getCacheAt().isBefore(proverka)).orElse(true);
     }
 
-    //когда нужно обновить фильмецы
-    @Transactional
+    //когда нужно обновить фильмецы - отдельная транзакция!
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public void updateMoviesForTmdb(){
         TmdbMoviesResponseDto responseDto = tmdbClient.getPopularMovies();
 
@@ -95,7 +104,7 @@ public class VotingService {
     public Vote createVote(UUID sessionId, UUID participantId, Long movieId, VoteDecision decision){
         Movie movi = movieRepository.findById(movieId).orElseThrow(() -> new RuntimeException("Фильм не найден: " + movieId));
 
-        Vote vote = Vote.builder().sessionId(sessionId).patricipanId(participantId).movie(movi).decision(decision).createdAt(ZonedDateTime.now()).build();
+        Vote vote = Vote.builder().sessionId(sessionId).participantId(participantId).movie(movi).decision(decision).createdAt(ZonedDateTime.now()).build();
         log.info("голос участника={}, по фильму = {}, его голос = {} ", participantId, movieId, decision);
         return voteRepository.save(vote);
     }
