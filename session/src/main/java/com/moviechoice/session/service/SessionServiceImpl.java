@@ -21,8 +21,11 @@ public class SessionServiceImpl implements SessionService {
     public Session createSession(){
         //генерирую уникальный код с помощью какого-нибудь алгоритма
         String uniqueCode = generateUniqCode();
-        //создаю сессию с помощью билдера
-        Session session = Session.builder().code(uniqueCode).status(SessionStatus.ACTIVE).createdAt(ZonedDateTime.now()).build();
+        //создаю сессию без Lombok-билдера, вручную устанавливая поля
+        Session session = new Session();
+        session.setCode(uniqueCode);
+        session.setStatus(SessionStatus.ACTIVE);
+        session.setCreatedAt(ZonedDateTime.now());
 
         return sessionRepository.save(session);
     }
