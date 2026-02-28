@@ -35,10 +35,9 @@ Thumbs.db
 *.pid
 
 # --- Application Config ---
-**/application-local.yml
-**/application-prod.yml
-**/application.yml.local
-
+gateway/src/main/resources/application.yml
+session/src/main/resources/application.yml
+voting/src/main/resources/application.yml
 # --- Database ---
 *.db
 *.sqlite
