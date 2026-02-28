@@ -11,7 +11,7 @@
 
     <artifactId>voting</artifactId>
     <version>1.0.0</version>
-    <name>gateway</name>
+    <name>voting</name>
     <description>Gateway Service</description>
 
     <dependencies>
