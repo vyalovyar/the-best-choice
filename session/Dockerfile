@@ -3,11 +3,12 @@ FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /app
 COPY pom.xml .
 
-COPY session/pom.xml session/
+# Copy module sources from this folder (Docker build context should be the `session` folder
+# when building this Dockerfile). Do NOT prefix with `session/` here.
+COPY src src
 
-COPY session/src session/src
-
-RUN mvn clean package -DskipTests -pl session -am
+# Run maven build for this module
+RUN mvn clean package -DskipTests
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
