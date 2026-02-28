@@ -1,21 +1,21 @@
 package com.moviechoice.session.service;
 
 
-import com.moviechoice.session.entity.Session;
-import com.moviechoice.session.entity.SessionStatus;
-import com.moviechoice.session.repository.SessionRepository;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-
 import java.time.ZonedDateTime;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.stereotype.Service;
+import com.moviechoice.session.entity.Session;
+import com.moviechoice.session.entity.SessionStatus;
+import com.moviechoice.session.repository.SessionRepository;
 
 @Service
-@RequiredArgsConstructor
 public class SessionServiceImpl implements SessionService {
 
     private final SessionRepository sessionRepository;
+    public SessionServiceImpl(SessionRepository sessionRepository) {
+        this.sessionRepository = sessionRepository;
+    }
 
     //Метод для создания сессии
     public Session createSession(){

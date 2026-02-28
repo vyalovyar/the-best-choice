@@ -1,24 +1,32 @@
 package com.moviechoice.session.controller;
 
 
-import com.moviechoice.session.entity.Session;
-import com.moviechoice.session.service.SessionService;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.moviechoice.session.entity.Session;
+import com.moviechoice.session.service.SessionService;
+
 @RestController
 @RequestMapping("/api/sessions")
-@RequiredArgsConstructor
 //пока побудет для всех, потому что домены разные
 @CrossOrigin(origins = "*")
 public class SessionController {
-    private  final SessionService sessionService;
+    private final SessionService sessionService;
 
+    public SessionController(SessionService sessionService) {
+        this.sessionService = sessionService;
+    }
 
     @PostMapping
     public ResponseEntity<Map<String, String>> createSession(){
