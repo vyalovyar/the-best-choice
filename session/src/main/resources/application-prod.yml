@@ -3,7 +3,7 @@ server:
 
 spring:
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:${DATABASE_URL}}
+    url: ${DATABASE_URL}
     username: ${DATABASE_USER}
     password: ${DATABASE_PASSWORD}
     driver-class-name: org.postgresql.Driver
@@ -13,5 +13,4 @@ spring:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
         default_schema: schema_session
