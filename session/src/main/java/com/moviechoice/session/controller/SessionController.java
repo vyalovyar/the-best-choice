@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -37,6 +38,7 @@ public class SessionController {
         resp.put("sessionId", session.getId().toString());
         resp.put("code", session.getCode().toString());
         resp.put("status", session.getStatus().toString());
+        resp.put("currentMovieIndex", session.getCurrentMovieIndex().toString());
 
         //отправляем ответ и статус
         return ResponseEntity.ok(resp);
@@ -51,6 +53,7 @@ public class SessionController {
                     res.put("sessionId", session.getId().toString());
                     res.put("code", session.getCode().toString());
                     res.put("status", session.getStatus().toString());
+                    res.put("currentMovieIndex", session.getCurrentMovieIndex().toString());
                     return ResponseEntity.ok(res);
                 })
                 .orElse(ResponseEntity.notFound().build());
@@ -66,8 +69,33 @@ public class SessionController {
                         res.put("sessionId", session.getId().toString());
                         res.put("code", session.getCode().toString());
                         res.put("status", session.getStatus().toString());
+                        res.put("currentMovieIndex", session.getCurrentMovieIndex().toString());
                         return ResponseEntity.ok(res);
                     }).orElse(ResponseEntity.notFound().build());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    @PostMapping("/{sessionId}/update-index")
+    public ResponseEntity<Map<String, String>> updateSessionMovieIndex(
+            @PathVariable String sessionId, 
+            @RequestBody Map<String, Integer> body) {
+        try {
+            UUID uuid = UUID.fromString(sessionId);
+            Integer movieIndex = body.get("currentMovieIndex");
+            
+            return sessionService.getSessionById(uuid)
+                    .map(session -> {
+                        session.setCurrentMovieIndex(movieIndex);
+                        Session updatedSession = sessionService.saveSession(session);
+                        
+                        Map<String, String> res = new HashMap<>();
+                        res.put("sessionId", updatedSession.getId().toString());
+                        res.put("currentMovieIndex", updatedSession.getCurrentMovieIndex().toString());
+                        return ResponseEntity.ok(res);
+                    })
+                    .orElse(ResponseEntity.notFound().build());
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().build();
         }

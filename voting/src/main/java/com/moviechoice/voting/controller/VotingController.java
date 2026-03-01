@@ -2,6 +2,7 @@ package com.moviechoice.voting.controller;
 
 
 import com.moviechoice.voting.dto.MatchMessage;
+import com.moviechoice.voting.dto.UpdateMovieIndexRequest;
 import com.moviechoice.voting.dto.VoteMessage;
 import com.moviechoice.voting.dto.VoteRequest;
 import com.moviechoice.voting.entity.Movie;
@@ -67,6 +68,12 @@ public class VotingController {
         chekForMath(request.getSessionId(), request.getMovieId());
     }
 
+    @MessageMapping("/update-movie-index")
+    public void handleUpdateMovieIndex(@Payload UpdateMovieIndexRequest request) {
+        log.info("Обновление индекса фильма для сессии={}, индекс={}", request.getSessionId(), request.getMovieIndex());
+        votingService.updateMovieIndexInSession(request.getSessionId(), request.getMovieIndex());
+    }
+
     private void chekForMath(UUID sessionId, long movieId) {
         List<Vote> votes = votingService.getAllVotesInSession(sessionId);
         
@@ -75,7 +82,7 @@ public class VotingController {
                 .filter(v -> v.getMovie().getId().equals(movieId))
                 .toList();
 
-        // Считаем да по текущему фильму
+        //считаем да по текущему фильму
         long likeCount = currentMovieVotes.stream()
                 .filter(v -> v.getDecision() == VoteDecision.LIKE)
                 .count();

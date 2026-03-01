@@ -89,6 +89,7 @@ async function createSession() {
         const data = await response.json();
         state.sessionId = data.sessionId;
         state.sessionCode = data.code;
+        state.currentMovieIndex = parseInt(data.currentMovieIndex) || 0;
         state.participantId = generateParticipantId();
 
         // Сохраняем в localStorage
@@ -177,7 +178,8 @@ async function fetchSessionCode(sessionId) {
         if (response.ok) {
             const data = await response.json();
             state.sessionCode = data.code;
-            console.log('Получен код сессии:', state.sessionCode);
+            state.currentMovieIndex = parseInt(data.currentMovieIndex) || 0;
+            console.log('Получен код сессии:', state.sessionCode, 'Индекс фильма:', state.currentMovieIndex);
         } else {
             console.warn('Не удалось получить информацию о сессии');
             // Используем первые несколько символов sessionId как fallback
@@ -412,6 +414,14 @@ function moveToNextMovie() {
         state.voted = false;
         state.votedDecision = null;
         state.participantVotes = {}; // Очищаем голоса для следующего фильма
+
+        // отправляем обновление индекса на бэкенд
+        if (state.connected && state.stompClient) {
+            state.stompClient.send('/app/update-movie-index', {}, JSON.stringify({
+                sessionId: state.sessionId,
+                movieIndex: state.currentMovieIndex,
+            }));
+        }
 
         // Проверяем, не загружаем ли мы первый фильм снова
         if (state.currentMovieIndex === 0) {

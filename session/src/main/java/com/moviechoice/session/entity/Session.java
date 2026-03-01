@@ -30,6 +30,9 @@ public class Session {
     @Column(name = "updated_at")
     private ZonedDateTime updatedAt;
 
+    @Column(name = "current_movie_index", nullable = false)
+    private Integer currentMovieIndex = 0;
+
     public UUID getId() {
         return id;
     }
@@ -68,5 +71,13 @@ public class Session {
 
     public void setStatus(SessionStatus status) {
         this.status = status;
+    }
+
+    public Integer getCurrentMovieIndex() {
+        return currentMovieIndex;
+    }
+
+    public void setCurrentMovieIndex(Integer currentMovieIndex) {
+        this.currentMovieIndex = currentMovieIndex;
     }
 }

@@ -4,7 +4,9 @@ package com.moviechoice.session.service;
 import java.time.ZonedDateTime;
 import java.util.Optional;
 import java.util.UUID;
+
 import org.springframework.stereotype.Service;
+
 import com.moviechoice.session.entity.Session;
 import com.moviechoice.session.entity.SessionStatus;
 import com.moviechoice.session.repository.SessionRepository;
@@ -37,6 +39,11 @@ public class SessionServiceImpl implements SessionService {
     @Override
     public Optional<Session> getSessionById(UUID sessionId) {
         return sessionRepository.findById(sessionId);
+    }
+
+    @Override
+    public Session saveSession(Session session) {
+        return sessionRepository.save(session);
     }
 
     //Генерерация случайного кода
