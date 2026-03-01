@@ -1,3 +1,10 @@
+// ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
+function getDefaultWsUrl() {
+    const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+    const host = window.location.host;
+    return `${protocol}${host}/ws`;
+}
+
 // ===== СОСТОЯНИЕ ПРИЛОЖЕНИЯ =====
 const state = {
     // Параметры сессии
@@ -23,7 +30,7 @@ const state = {
     // Используем переменные окружения для конфигурации
     sessionServiceUrl: window.BACKEND_SESSION_URL || 'http://localhost:8081/api/sessions',
     votingServiceUrl: window.BACKEND_VOTING_URL || 'http://localhost:8082/api/voting',
-    wsUrl: window.BACKEND_WS_URL || 'ws://localhost:8082/ws',
+    wsUrl: window.BACKEND_WS_URL || getDefaultWsUrl(),
 };
 
 // ===== ИНИЦИАЛИЗАЦИЯ =====
