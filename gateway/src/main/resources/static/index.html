@@ -314,7 +314,12 @@
                     <div id="lobbyInfo" class="muted" style="margin-bottom:12px;">Ожидание запуска хоста</div>
 
                     <div class="waiting-actions">
-                        <button id="startBtn" class="btn btn-primary hidden" onclick="startVoting()">Начать выбор</button>
+                        <button id="startBtn"
+                                class="btn btn-primary"
+                                style="display:none"
+                                onclick="startVoting()">
+                            Начать выбор
+                        </button>
                         <button class="btn btn-ghost" onclick="goBackToWelcome()">Вернуться</button>
                     </div>
 
@@ -377,6 +382,66 @@
     </div>
 </div>
 <div id="toast" class="toast hidden">Уведомление</div>
+<script>
+    function showToast(message) {
+        const toast = document.getElementById("toast");
+        toast.innerText = message;
+        toast.classList.remove("hidden");
+        toast.classList.add("visible");
+
+        setTimeout(() => {
+            toast.classList.remove("visible");
+            setTimeout(() => {
+                toast.classList.add("hidden");
+            }, 300);
+        }, 3000);
+    }
+
+    // Переопределяем функцию обновления участников
+    function updateParticipantsUI(participants, hostUsername) {
+
+        const list = document.getElementById("participantsList");
+        list.innerHTML = "";
+
+        participants.forEach(p => {
+
+            const item = document.createElement("div");
+            item.className = "participant-item";
+
+            const avatar = document.createElement("div");
+            avatar.className = "avatar";
+            avatar.innerText = p.username.substring(0,2).toUpperCase();
+
+            const meta = document.createElement("div");
+            meta.className = "p-meta";
+
+            const name = document.createElement("div");
+            name.className = "p-name";
+            name.innerText = p.username + (p.username === hostUsername ? " (Host)" : "");
+
+            const sub = document.createElement("div");
+            sub.className = "p-sub";
+            sub.innerText = "В комнате";
+
+            meta.appendChild(name);
+            meta.appendChild(sub);
+
+            item.appendChild(avatar);
+            item.appendChild(meta);
+
+            list.appendChild(item);
+        });
+
+        const startBtn = document.getElementById("startBtn");
+
+        if (hostUsername === window.currentUsername) {
+            startBtn.style.display = "inline-block";
+            startBtn.disabled = participants.length < 2;
+        } else {
+            startBtn.style.display = "none";
+        }
+    }
+</script>
 <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
 <script src="/js/app.js"></script>

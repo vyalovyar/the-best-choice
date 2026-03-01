@@ -6,20 +6,22 @@ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBr
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
-//Включаем поддержку вебсокета и стомп
 @Configuration
 @EnableWebSocketMessageBroker
 public class WebSocket implements WebSocketMessageBrokerConfigurer {
-    //Вернусь еще сюда, чтобы разобраться подробнее че да как
+
     @Override
-    public void configureMessageBroker(MessageBrokerRegistry config){
+    public void configureMessageBroker(MessageBrokerRegistry config) {
         config.enableSimpleBroker("/topic");
         config.setApplicationDestinationPrefixes("/app");
+        config.setUserDestinationPrefix("/user");
     }
 
     @Override
-    public void registerStompEndpoints(StompEndpointRegistry registry){
-        registry.addEndpoint("/ws").setAllowedOriginPatterns("*").withSockJS();
-    }
+    public void registerStompEndpoints(StompEndpointRegistry registry) {
 
+        registry.addEndpoint("/ws")
+                .setAllowedOriginPatterns("*"); // УБРАЛИ withSockJS()
+
+    }
 }
