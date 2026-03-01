@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy" content="connect-src 'self' https: wss:; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline';">
     <title>The Best Choice — Совместный выбор фильма</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -185,7 +186,7 @@
             border-radius:8px;
             font-size:13px;
             color:#071028;
-            background:#94a3b8; /* default */
+            background:#94a3b8;
         }
         .p-status.wait { background: #94a3b8; color:#071028; }
         .p-status.voted { background: #10b981; color:#071028; }
@@ -214,8 +215,10 @@
 
         .status-row { margin-top:18px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
         .status-item { padding:8px 12px; border-radius:10px; background: rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.02); font-size:13px; color:#cfe0ff; }
+
         .match-poster { width:260px; height:390px; border-radius:12px; overflow:hidden; border: 4px solid #10b981; margin-bottom:12px; }
         .match-title { font-size:26px; color:#10b981; font-weight:900; }
+
         .toast {
             position: fixed;
             left: 50%;
@@ -235,6 +238,7 @@
         .toast.visible { top: 22px; opacity: 1; }
         .muted { color:#9fb0cc; font-size:13px; }
         .hidden { display:none !important; }
+
         @media (max-width: 920px) {
             .welcome-inner, .waiting-grid { grid-template-columns: 1fr; }
             .poster { width:100%; height:420px; }
@@ -290,11 +294,16 @@
             </div>
         </div>
     </div>
+
+    <!-- WAITING SCREEN -->
     <div id="waitingScreen" class="screen dark-card">
         <h2>Комната ожидания</h2>
         <div class="waiting-grid">
             <div>
-                <div class="session-code">Код сессии: <strong id="waitingCodeText">—</strong><button id="copyInviteBtn" class="btn btn-ghost" style="margin-left:12px; font-weight:700;" onclick="copyToClipboard()">Копировать ссылку</button></div>
+                <div class="session-code">
+                    Код сессии: <strong id="waitingCodeText">—</strong>
+                    <button id="copyInviteBtn" class="btn btn-ghost" style="margin-left:12px; font-weight:700;" onclick="copyToClipboard()">Копировать ссылку</button>
+                </div>
 
                 <div style="margin-top:14px;">
                     <div class="muted">Поделитесь ссылкой, чтобы пригласить участников</div>
@@ -314,12 +323,8 @@
                     <div id="lobbyInfo" class="muted" style="margin-bottom:12px;">Ожидание запуска хоста</div>
 
                     <div class="waiting-actions">
-                        <button id="startBtn"
-                                class="btn btn-primary"
-                                style="display:none"
-                                onclick="startVoting()">
-                            Начать выбор
-                        </button>
+
+                        <button id="startBtn" class="btn btn-primary hidden" onclick="startVoting()">Начать выбор</button>
                         <button class="btn btn-ghost" onclick="goBackToWelcome()">Вернуться</button>
                     </div>
 
@@ -331,6 +336,8 @@
             </div>
         </div>
     </div>
+
+    <!-- VOTING SCREEN -->
     <div id="votingScreen" class="screen dark-card">
         <div style="display:flex; justify-content:space-between; align-items:center;">
             <div>
@@ -352,22 +359,24 @@
                 <div class="movie-meta muted" id="movieMeta">Описание и год</div>
 
                 <div class="vote-row">
-                    <button id="yesBtn" class="vote-btn vote-btn-like vote-btn like" onclick="vote('LIKE')">Да</button>
-                    <button id="noBtn" class="vote-btn vote-btn-dislike vote-btn dislike" onclick="vote('DISLIKE')">Нет</button>
+                    <button id="yesBtn" class="vote-btn like" onclick="vote('LIKE')">👍 Да</button>
+                    <button id="noBtn" class="vote-btn dislike" onclick="vote('DISLIKE')">👎 Нет</button>
                 </div>
 
                 <div id="votingNotice" class="muted" style="margin-top:8px;">Ожидание запуска... (кнопки будут доступны после начала)</div>
 
-                <div class="status-row" id="statusRow" style="margin-top:10px;">
-                </div>
+                <div class="status-row" id="statusRow" style="margin-top:10px;"></div>
+
                 <div style="margin-top:16px;">
                     <button class="btn btn-ghost" onclick="exitSession()">Выйти из сессии</button>
                 </div>
             </div>
         </div>
     </div>
+
+    <!-- MATCH SCREEN -->
     <div id="matchScreen" class="screen dark-card" style="text-align:center;">
-        <h2 id="matchTitle">Совпадение</h2>
+        <h2 id="matchTitle">Совпадение 🎉</h2>
         <div style="height:12px;"></div>
         <div class="match-poster" id="matchPosterWrap">
             <img id="matchPoster" src="" alt="Постер" style="width:100%; height:100%; object-fit:cover;">
@@ -381,69 +390,25 @@
         </div>
     </div>
 </div>
+
 <div id="toast" class="toast hidden">Уведомление</div>
-<script>
-    function showToast(message) {
-        const toast = document.getElementById("toast");
-        toast.innerText = message;
-        toast.classList.remove("hidden");
-        toast.classList.add("visible");
 
-        setTimeout(() => {
-            toast.classList.remove("visible");
-            setTimeout(() => {
-                toast.classList.add("hidden");
-            }, 300);
-        }, 3000);
-    }
-
-    // Переопределяем функцию обновления участников
-    function updateParticipantsUI(participants, hostUsername) {
-
-        const list = document.getElementById("participantsList");
-        list.innerHTML = "";
-
-        participants.forEach(p => {
-
-            const item = document.createElement("div");
-            item.className = "participant-item";
-
-            const avatar = document.createElement("div");
-            avatar.className = "avatar";
-            avatar.innerText = p.username.substring(0,2).toUpperCase();
-
-            const meta = document.createElement("div");
-            meta.className = "p-meta";
-
-            const name = document.createElement("div");
-            name.className = "p-name";
-            name.innerText = p.username + (p.username === hostUsername ? " (Host)" : "");
-
-            const sub = document.createElement("div");
-            sub.className = "p-sub";
-            sub.innerText = "В комнате";
-
-            meta.appendChild(name);
-            meta.appendChild(sub);
-
-            item.appendChild(avatar);
-            item.appendChild(meta);
-
-            list.appendChild(item);
-        });
-
-        const startBtn = document.getElementById("startBtn");
-
-        if (hostUsername === window.currentUsername) {
-            startBtn.style.display = "inline-block";
-            startBtn.disabled = participants.length < 2;
-        } else {
-            startBtn.style.display = "none";
-        }
-    }
-</script>
 <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
 <script src="/js/app.js"></script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const env = document.getElementById('envInfo');
+        if (env && typeof state !== 'undefined') {
+            env.textContent = `WS: ${state.wsUrl}, Voting: ${state.votingServiceUrl}`;
+            console.log(' Frontend config:', {
+                wsUrl: state.wsUrl,
+                votingUrl: state.votingServiceUrl,
+                sessionUrl: state.sessionServiceUrl
+            });
+        }
+    });
+</script>
 </body>
 </html>
