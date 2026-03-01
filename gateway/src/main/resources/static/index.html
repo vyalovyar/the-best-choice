@@ -1,681 +1,432 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>The Best Choice - Выбор фильма вместе</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>The Best Choice — Совместный выбор фильма</title>
 
+    <style>
+        /* ===== Reset & base ===== */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html,body { height: 100%; }
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+            font-family: Inter, "Segoe UI", Roboto, system-ui, -apple-system, "Helvetica Neue", Arial;
+            background: linear-gradient(180deg, #071028 0%, #0b1220 100%);
+            color: #e6eef8;
             display: flex;
-            justify-content: center;
             align-items: center;
-            padding: 20px;
+            justify-content: center;
+            padding: 24px;
+            -webkit-font-smoothing:antialiased;
+            -moz-osx-font-smoothing:grayscale;
         }
 
         .container {
             width: 100%;
-            max-width: 600px;
+            max-width: 980px;
+            margin: 0 auto;
         }
 
-        /* === ГЛАВНЫЙ ЭКРАН === */
+        /* ===== Card / screens ===== */
         .screen {
             display: none;
-            animation: fadeIn 0.5s ease-in;
+            width: 100%;
+            border-radius: 14px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+            box-shadow: 0 10px 40px rgba(2,6,23,0.6);
+            padding: 28px;
+            transition: transform .28s cubic-bezier(.2,.9,.2,1), opacity .28s ease;
+            transform-origin: center;
         }
 
         .screen.active {
-            display: flex;
-            flex-direction: column;
+            display: block;
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        .dark-card { background: linear-gradient(180deg,#0f172a,#0b1220); border: 1px solid rgba(255,255,255,0.03); }
+
+        h1, h2, h3 { margin-bottom: 12px; font-weight: 600; color: #e6eef8; }
+        p { color: #b8c7d9; margin-bottom: 12px; }
+
+        /* ===== Welcome ===== */
+        .welcome-inner {
+            display: grid;
+            grid-template-columns: 1fr 360px;
+            gap: 28px;
             align-items: center;
-            justify-content: center;
-            min-height: 100vh;
         }
 
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+        .brand {
+            display:flex;
+            flex-direction:column;
+            gap:6px;
         }
-
-        /* === ЭКРАН ПРИСОЕДИНЕНИЯ === */
-        .welcome-screen {
-            background: white;
-            border-radius: 20px;
-            padding: 40px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            text-align: center;
+        .brand-title {
+            font-size: 28px;
+            letter-spacing: -0.4px;
+            color: #e6eef8;
         }
-
-        .logo {
-            font-size: 48px;
-            margin-bottom: 10px;
-        }
-
-        .welcome-screen h1 {
-            color: #333;
-            font-size: 32px;
-            margin-bottom: 10px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .welcome-screen p {
-            color: #666;
-            margin-bottom: 30px;
-            font-size: 16px;
+        .brand-sub {
+            color: #9fb0cc;
+            font-size: 14px;
         }
 
         .tabs {
-            display: flex;
+            display:flex;
             gap: 10px;
-            margin-bottom: 30px;
+            margin-top: 18px;
         }
 
         .tab-btn {
-            flex: 1;
-            padding: 12px 20px;
-            border: 2px solid #e0e0e0;
-            background: white;
+            padding: 10px 14px;
             border-radius: 10px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 600;
-            transition: all 0.3s;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.02);
+            color: #d7e6fb;
+            cursor:pointer;
+            font-weight:600;
+            transition: all .18s ease;
         }
-
         .tab-btn.active {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-color: transparent;
+            background: linear-gradient(90deg,#4f46e5,#6366f1);
+            color: #fff;
+            box-shadow: 0 8px 24px rgba(79,70,229,0.16);
+            transform: translateY(-2px);
         }
 
-        .tab-content {
-            display: none;
+        .panel {
+            background: rgba(255,255,255,0.02);
+            padding: 18px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.02);
         }
 
-        .tab-content.active {
-            display: block;
-        }
+        label { display:block; font-size:13px; color:#b8c7d9; margin-bottom:8px; font-weight:600; }
 
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            color: #333;
-            font-weight: 600;
-        }
-
-        .form-group input {
+        input[type="text"] {
             width: 100%;
-            padding: 12px 16px;
-            border: 2px solid #e0e0e0;
+            padding: 12px 14px;
             border-radius: 10px;
-            font-size: 16px;
-            transition: border-color 0.3s;
-        }
-
-        .form-group input:focus {
+            border: 1px solid rgba(255,255,255,0.04);
+            background: rgba(255,255,255,0.02);
+            color: #e6eef8;
+            font-size: 14px;
             outline: none;
-            border-color: #667eea;
+            transition: box-shadow .12s ease, border-color .12s ease;
+        }
+        input[type="text"]:focus {
+            box-shadow: 0 6px 24px rgba(83, 92, 230, 0.12);
+            border-color: rgba(99,102,241,0.8);
         }
 
-        .form-group input::placeholder {
-            color: #999;
-        }
-
+        .actions { display:flex; gap:12px; margin-top: 14px; }
         .btn {
-            width: 100%;
-            padding: 14px;
-            border: none;
+            padding: 12px 16px;
             border-radius: 10px;
-            font-size: 16px;
-            font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s;
+            font-weight: 700;
+            letter-spacing: .2px;
+            border: none;
+            transition: transform .12s ease, box-shadow .12s ease, opacity .12s ease;
         }
+        .btn:disabled { opacity:.6; cursor:not-allowed; transform:none; box-shadow:none; }
 
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            background: linear-gradient(90deg,#4f46e5,#6366f1);
+            color: #fff;
+            box-shadow: 0 8px 28px rgba(79,70,229,0.14);
+        }
+        .btn-ghost {
+            background: transparent;
+            color: #cfe0ff;
+            border: 1px solid rgba(255,255,255,0.04);
         }
 
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
-        }
+        .error { color: #ffb4b4; margin-top:10px; font-size:13px; }
 
-        .btn-primary:active {
-            transform: translateY(0);
-        }
-
-        .btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-
-        .error {
-            color: #e74c3c;
-            font-size: 14px;
-            text-align: center;
-            margin-top: 15px;
-        }
-
-        .success {
-            color: #27ae60;
-            font-size: 14px;
-            text-align: center;
-            margin-top: 15px;
-        }
-
-        .copy-section {
-            background: #f5f5f5;
-            padding: 20px;
-            border-radius: 10px;
-            margin-top: 20px;
-            margin-bottom: 20px;
-        }
-
-        .copy-section p {
-            color: #666;
-            margin-bottom: 10px;
-            font-size: 14px;
-        }
-
-        .link-box {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-
-        .link-box input {
-            flex: 1;
-            padding: 10px 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 14px;
-            background: white;
-        }
-
-        .copy-btn {
-            padding: 10px 16px;
-            background: #667eea;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.3s;
-        }
-
-        .copy-btn:hover {
-            background: #764ba2;
-        }
-
-        /* === ЭКРАН ОЖИДАНИЯ === */
-        .waiting-screen {
-            background: white;
-            border-radius: 20px;
-            padding: 50px 40px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            text-align: center;
-        }
-
-        .waiting-screen h2 {
-            color: #333;
-            margin-bottom: 30px;
-        }
-
-        .spinner {
-            width: 50px;
-            height: 50px;
-            border: 4px solid #f0f0f0;
-            border-top: 4px solid #667eea;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 30px;
-        }
-
-        @keyframes spin {
-            0% {
-                transform: rotate(0deg);
-            }
-            100% {
-                transform: rotate(360deg);
-            }
-        }
-
-        .waiting-screen p {
-            color: #666;
-        }
-
-        /* === ЭКРАН ГОЛОСОВАНИЯ === */
-        .voting-screen {
-            background: white;
-            border-radius: 20px;
-            padding: 30px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            text-align: center;
-        }
-
-        .movie-poster {
-            width: 100%;
-            max-width: 300px;
-            height: 450px;
-            background: #f0f0f0;
-            border-radius: 15px;
-            margin: 30px auto;
-            overflow: hidden;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-        }
-
-        .movie-poster img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-
-        .movie-title {
-            font-size: 24px;
-            color: #333;
-            margin: 20px 0;
-            font-weight: 600;
-        }
-
-        .voting-buttons {
-            display: flex;
+        /* ===== Waiting screen (new) ===== */
+        .waiting-grid {
+            display:grid;
+            grid-template-columns: 1fr 320px;
             gap: 20px;
-            margin-top: 30px;
-            margin-bottom: 20px;
+            align-items: start;
         }
 
-        .vote-btn {
-            flex: 1;
-            padding: 16px;
-            border: none;
-            border-radius: 12px;
-            font-size: 18px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            color: white;
+        .session-code {
+            padding: 12px;
+            background: rgba(255,255,255,0.02);
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.02);
+            font-weight:700;
+            color:#e6eef8;
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+        }
+        .session-code strong { letter-spacing:3px; font-size:18px; }
+
+        .participants-list {
+            margin-top: 12px;
+            display:flex;
+            flex-direction:column;
+            gap:10px;
+            max-height: 420px;
+            overflow:auto;
+            padding-right: 6px;
         }
 
-        .vote-btn.yes {
-            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        .participant-item {
+            display:flex;
+            gap:12px;
+            align-items:center;
+            padding:10px;
+            border-radius:10px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));
+            border: 1px solid rgba(255,255,255,0.02);
+            transition: transform .12s ease, background .12s ease;
+        }
+        .participant-item:hover { transform: translateY(-4px); background: rgba(255,255,255,0.012); }
+
+        .avatar {
+            width:44px;height:44px;border-radius:10px;
+            display:flex;align-items:center;justify-content:center;
+            font-weight:700;color:#fff;
+            background: linear-gradient(90deg,#111827,#1f2937);
+            border: 1px solid rgba(255,255,255,0.03);
+            font-size:14px;
         }
 
-        .vote-btn.yes:hover:not(:disabled) {
-            transform: translateY(-3px);
-            box-shadow: 0 10px 25px rgba(17, 153, 142, 0.4);
-        }
+        .p-meta { flex:1; display:flex; flex-direction:column; gap:2px; }
+        .p-name { color:#e6eef8; font-weight:700; font-size:15px; }
+        .p-sub { color:#9fb0cc; font-size:13px; }
 
-        .vote-btn.no {
-            background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+        .p-status {
+            font-weight:700;
+            padding:6px 10px;
+            border-radius:8px;
+            font-size:13px;
+            color:#071028;
+            background:#94a3b8; /* default */
         }
+        .p-status.wait { background: #94a3b8; color:#071028; }
+        .p-status.voted { background: #10b981; color:#071028; }
 
-        .vote-btn.no:hover:not(:disabled) {
-            transform: translateY(-3px);
-            box-shadow: 0 10px 25px rgba(235, 51, 73, 0.4);
+        .waiting-actions { display:flex; gap:10px; margin-top:18px; }
+
+        /* ===== Voting screen ===== */
+        .voting-wrap { display:flex; gap:28px; align-items:flex-start; }
+        .poster {
+            width:340px; height:510px; border-radius:12px; overflow:hidden;
+            background: linear-gradient(180deg,#0b1220,#071028);
+            border:1px solid rgba(255,255,255,0.04);
+            box-shadow: 0 16px 40px rgba(2,6,23,0.6);
         }
+        .poster img { width:100%; height:100%; object-fit:cover; display:block; }
 
-        .vote-btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none !important;
-        }
+        .voting-right { flex:1; display:flex; flex-direction:column; gap:12px; }
+        .movie-title { font-size:22px; font-weight:800; color:#e6eef8; }
+        .movie-meta { color:#9fb0cc; font-size:14px; }
 
-        .vote-btn.voted {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
+        .vote-row { display:flex; gap:12px; margin-top:18px; }
+        .vote-btn { flex:1; padding:14px; border-radius:12px; font-weight:800; font-size:16px; border:none; cursor:pointer; transition: transform .12s ease, box-shadow .12s ease; }
+        .vote-btn.like { background: linear-gradient(90deg,#059669,#10b981); color:#071028; box-shadow: 0 10px 24px rgba(16,185,129,0.12); }
+        .vote-btn.dislike { background: linear-gradient(90deg,#ef4444,#fb7185); color:#fff; box-shadow: 0 10px 24px rgba(239,68,68,0.12); }
+        .vote-btn:disabled { opacity:.6; cursor:not-allowed; transform:none; box-shadow:none; }
 
-        .loading-indicator {
-            color: #999;
-            font-size: 14px;
-            margin-top: 10px;
-        }
+        .status-row { margin-top:18px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+        .status-item { padding:8px 12px; border-radius:10px; background: rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.02); font-size:13px; color:#cfe0ff; }
 
-        .participant-status {
-            display: flex;
-            gap: 30px;
-            justify-content: center;
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 2px solid #f0f0f0;
-        }
+        /* ===== Match screen ===== */
+        .match-poster { width:260px; height:390px; border-radius:12px; overflow:hidden; border: 4px solid #10b981; margin-bottom:12px; }
+        .match-title { font-size:26px; color:#10b981; font-weight:900; }
 
-        .participant {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .participant-avatar {
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            background: #667eea;
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
-            font-weight: 600;
-        }
-
-        .participant-status-text {
-            font-size: 12px;
-            color: #666;
-        }
-
-        .status-icon {
-            font-size: 18px;
-        }
-
-        /* === ЭКРАН СОВПАДЕНИЯ === */
-        .match-screen {
-            background: white;
-            border-radius: 20px;
-            padding: 30px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            text-align: center;
-        }
-
-        .match-animation {
-            animation: scaleIn 0.6s ease-out;
-        }
-
-        @keyframes scaleIn {
-            0% {
-                opacity: 0;
-                transform: scale(0.5) rotate(-180deg);
-            }
-            100% {
-                opacity: 1;
-                transform: scale(1) rotate(0);
-            }
-        }
-
-        .confetti {
+        /* ===== Toast ===== */
+        .toast {
             position: fixed;
-            pointer-events: none;
-            animation: confettifall 3s ease-in forwards;
-        }
-
-        @keyframes confettifall {
-            to {
-                transform: translateY(100vh) rotate(360deg);
-                opacity: 0;
-            }
-        }
-
-        .match-poster {
-            width: 100%;
-            max-width: 250px;
-            height: 375px;
-            background: #f0f0f0;
-            border-radius: 15px;
-            margin: 30px auto;
-            overflow: hidden;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-            border: 4px solid #11998e;
-        }
-
-        .match-poster img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-
-        .match-title {
-            font-size: 36px;
-            margin: 20px 0;
-            color: #11998e;
-            font-weight: 700;
-        }
-
-        .celebration {
-            font-size: 60px;
-            animation: bounce 0.6s ease-in-out;
-        }
-
-        @keyframes bounce {
-            0%, 100% {
-                transform: translateY(0);
-            }
-            50% {
-                transform: translateY(-20px);
-            }
-        }
-
-        .match-actions {
-            margin-top: 30px;
-            display: flex;
-            gap: 15px;
-        }
-
-        .exit-btn {
-            flex: 1;
-            padding: 14px;
-            border: none;
+            left: 50%;
+            top: -80px;
+            transform: translateX(-50%);
+            min-width: 220px;
+            max-width: 94%;
+            padding: 12px 20px;
             border-radius: 10px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            background: #999;
-            color: white;
-            transition: all 0.3s;
+            background: linear-gradient(90deg,#4f46e5,#6366f1);
+            color: #fff;
+            box-shadow: 0 10px 30px rgba(99,102,241,0.16);
+            z-index: 99999;
+            transition: top .36s cubic-bezier(.2,.9,.2,1), opacity .18s ease;
+            opacity: 0;
         }
+        .toast.visible { top: 22px; opacity: 1; }
 
-        .exit-btn:hover {
-            background: #777;
-        }
+        /* ===== small helpers ===== */
+        .muted { color:#9fb0cc; font-size:13px; }
+        .hidden { display:none !important; }
 
-        .next-btn {
-            flex: 1;
-            padding: 14px;
-            border: none;
-            border-radius: 10px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            transition: all 0.3s;
-        }
-
-        .next-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
-        }
-
-        /* === МОБИЛЬНЫЙ ДИЗАЙН === */
-        @media (max-width: 480px) {
-            .welcome-screen,
-            .waiting-screen,
-            .voting-screen,
-            .match-screen {
-                padding: 25px 20px;
-                border-radius: 15px;
-            }
-
-            .welcome-screen h1 {
-                font-size: 24px;
-            }
-
-            .movie-title {
-                font-size: 20px;
-            }
-
-            .match-title {
-                font-size: 28px;
-            }
-
-            .vote-btn {
-                padding: 14px;
-                font-size: 16px;
-            }
-        }
-
-        .hidden {
-            display: none;
+        /* ===== responsive ===== */
+        @media (max-width: 920px) {
+            .welcome-inner, .waiting-grid { grid-template-columns: 1fr; }
+            .poster { width:100%; height:420px; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <!-- ЭКРАН ПРИСОЕДИНЕНИЯ -->
-        <div id="welcomeScreen" class="screen welcome-screen active">
-            <div class="logo">🎬</div>
-            <h1>The Best Choice</h1>
-            <p>Выбирайте фильм вместе с друзьями</p>
-
-            <div class="tabs">
-                <button class="tab-btn active" onclick="switchTab('join')">Присоединиться</button>
-                <button class="tab-btn" onclick="switchTab('create')">Создать сессию</button>
-            </div>
-
-            <!-- TAB: ПРИСОЕДИНИТЬСЯ -->
-            <div id="joinTab" class="tab-content active">
-                <div class="form-group">
-                    <label>Введите ссылку сессии:</label>
-                    <input
-                        type="text"
-                        id="sessionLink"
-                        placeholder="https://localhost:8080/?session=..."
-                        autocomplete="off"
-                    />
+<div class="container">
+    <!-- WELCOME SCREEN -->
+    <div id="welcomeScreen" class="screen active dark-card">
+        <div class="welcome-inner">
+            <div>
+                <div class="brand">
+                    <div class="brand-title">The Best Choice</div>
+                    <div class="brand-sub">Совместный выбор фильма — быстро и красиво</div>
                 </div>
-                <button class="btn btn-primary" onclick="joinSession()">Присоединиться</button>
-                <div id="joinError" class="error hidden"></div>
-            </div>
 
-            <!-- TAB: СОЗДАТЬ СЕССИЮ -->
-            <div id="createTab" class="tab-content">
-                <p style="color: #666; margin-bottom: 20px;">Создайте новую сессию и пригласите друзей!</p>
-                <button class="btn btn-primary" onclick="createSession()">Создать сессию</button>
-                
-                <div id="createError" class="error hidden"></div>
-            </div>
-        </div>
-
-        <!-- ЭКРАН ОЖИДАНИЯ ВТОРОГО УЧАСТНИКА -->
-        <div id="waitingScreen" class="screen waiting-screen">
-            <h2>Ожидание второго участника...</h2>
-            <div class="spinner"></div>
-            <p id="waitingCode" style="font-size: 16px; color: #333; margin-bottom: 20px;">Код сессии: <strong></strong></p>
-            <div class="copy-section">
-                <p>Поделитесь этой ссылкой с другом:</p>
-                <div class="link-box">
-                    <input type="text" id="inviteLink" readonly />
-                    <button class="copy-btn" onclick="copyToClipboard()">Копировать</button>
-                </div>
-            </div>
-            <button class="btn btn-primary" style="margin-top: 30px;" onclick="goBackToWelcome()">Вернуться на главную</button>
-        </div>
-
-        <!-- ЭКРАН ГОЛОСОВАНИЯ -->
-        <div id="votingScreen" class="screen voting-screen">
-            <h2 style="color: #667eea; margin-bottom: 10px;">Голосование</h2>
-            <p style="color: #999; margin-bottom: 20px;" id="movieCounter">Фильм 1 из 20</p>
-
-            <div class="movie-poster">
-                <img id="moviePoster" src="" alt="Постер фильма" />
-            </div>
-
-            <div class="movie-title" id="movieTitle">Загрузка...</div>
-
-            <div class="voting-buttons">
-                <button class="vote-btn yes" id="yesBtn" onclick="vote('LIKE')">👍 Да</button>
-                <button class="vote-btn no" id="noBtn" onclick="vote('DISLIKE')">👎 Нет</button>
-            </div>
-
-            <div class="participant-status">
-                <div class="participant">
-                    <div class="participant-avatar">1</div>
-                    <div>
-                        <div class="participant-status-text">Вы</div>
-                        <div class="status-icon" id="participant1Status">⏳</div>
+                <div style="margin-top:18px;">
+                    <div class="tabs" role="tablist" aria-label="create or join">
+                        <button id="tabJoin" class="tab-btn active" onclick="switchTab('join')">Присоединиться</button>
+                        <button id="tabCreate" class="tab-btn" onclick="switchTab('create')">Создать</button>
                     </div>
-                </div>
-                <div class="participant">
-                    <div class="participant-avatar">2</div>
-                    <div>
-                        <div class="participant-status-text">Друг</div>
-                        <div class="status-icon" id="participant2Status">⏳</div>
+
+                    <div id="joinPanel" class="panel" style="margin-top:12px;">
+                        <label for="sessionLink">Ссылка сессии</label>
+                        <input id="sessionLink" type="text" placeholder="https://example.com/?session=..." />
+                        <div class="actions" style="margin-top:12px;">
+                            <button id="joinBtn" class="btn btn-primary" onclick="joinSession()">Присоединиться</button>
+                            <button class="btn btn-ghost" onclick="pasteFromClipboard()">Вставить ссылку</button>
+                        </div>
+                        <div id="joinError" class="error hidden"></div>
+                    </div>
+
+                    <div id="createPanel" class="panel hidden" style="margin-top:12px;">
+                        <p class="muted">Создайте новую приватную сессию для друзей. Вы автоматически становитесь организатором (host).</p>
+                        <div class="actions">
+                            <button id="createBtn" class="btn btn-primary" onclick="createSession()">Создать сессию</button>
+                            <button class="btn btn-ghost" onclick="goBackToWelcome()">Отмена</button>
+                        </div>
+                        <div id="createError" class="error hidden"></div>
                     </div>
                 </div>
             </div>
 
-            <button class="exit-btn" style="margin-top: 30px;" onclick="exitSession()">Выход</button>
-        </div>
-
-        <!-- ЭКРАН СОВПАДЕНИЯ -->
-        <div id="matchScreen" class="screen match-screen">
-            <div class="celebration match-animation">🎉</div>
-
-            <div class="match-poster">
-                <img id="matchPoster" src="" alt="Постер фильма" />
-            </div>
-
-            <div class="match-title" id="matchTitle">Совпадение!</div>
-            <p style="color: #666; margin: 20px 0;" id="matchSubtitle">Вы оба выбрали этот фильм!</p>
-
-            <div class="match-actions">
-                <button class="next-btn" onclick="nextMatch()">Дальше</button>
-                <button class="exit-btn" onclick="exitSession()">Выход</button>
+            <div>
+                <div class="panel">
+                    <h3>Как это работает</h3>
+                    <p class="muted">1) Создайте сессию → поделитесь ссылкой. 2) Участники присоединяются и появляются в комнате ожидания. 3) Хост нажимает «Начать выбор» → начинается голосование. 4) Когда все проголосовали — переходим к следующему фильму.</p>
+                    <div style="margin-top:12px;">
+                        <label>Текущее окружение:</label>
+                        <div class="muted" id="envInfo">Backend: автоматически</div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+    <!-- WAITING / LOBBY SCREEN -->
+    <div id="waitingScreen" class="screen dark-card">
+        <h2>Комната ожидания</h2>
+        <div class="waiting-grid">
+            <div>
+                <div class="session-code">Код сессии: <strong id="waitingCodeText">—</strong><button id="copyInviteBtn" class="btn btn-ghost" style="margin-left:12px; font-weight:700;" onclick="copyToClipboard()">Копировать ссылку</button></div>
 
-    <script>
-        (function() {
-            const isLocalhost = window.location.hostname === 'localhost' ||
-                window.location.hostname === '127.0.0.1';
+                <div style="margin-top:14px;">
+                    <div class="muted">Поделитесь ссылкой, чтобы пригласить участников</div>
+                    <div style="margin-top:12px;">
+                        <input id="inviteLink" type="text" readonly />
+                    </div>
+                </div>
 
-            if (isLocalhost) {
+                <div style="margin-top:18px;">
+                    <div class="muted">Участники</div>
+                    <div id="participantsList" class="participants-list"></div>
+                </div>
+            </div>
 
-                window.BACKEND_SESSION_URL = 'http://localhost:8081/api/sessions';
-                window.BACKEND_VOTING_URL = 'http://localhost:8082/api/voting';
-                window.BACKEND_WS_URL = 'http://localhost:8082/ws';
-            } else {
+            <div>
+                <div class="panel">
+                    <h3>Действия</h3>
+                    <div id="lobbyInfo" class="muted" style="margin-bottom:12px;">Ожидание запуска хоста</div>
 
-                const protocol = window.location.protocol;
+                    <div class="waiting-actions">
+                        <button id="startBtn" class="btn btn-primary hidden" onclick="startVoting()">Начать выбор</button>
+                        <button class="btn btn-ghost" onclick="goBackToWelcome()">Вернуться</button>
+                    </div>
 
-                const host = window.location.host;
-                const votingHost = host.replace('thebestchoice-gateway', 'thebestchoice-voting')
-                    .replace('gateway', 'voting');
+                    <div style="margin-top:16px;">
+                        <div class="muted">Примечание:</div>
+                        <div class="muted" style="font-size:13px;">Хост может запустить процесс выбора в любой момент. После запуска все попадают в экран голосования.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
-                window.BACKEND_WS_URL = protocol + '//' + votingHost + '/ws';
-            }
+    <!-- VOTING SCREEN -->
+    <div id="votingScreen" class="screen dark-card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+                <h2 style="margin-bottom:4px;">Голосование</h2>
+                <div id="movieCounter" class="muted">Фильм 1 из 20</div>
+            </div>
+            <div class="muted">Сессия: <strong id="votingSessionCode">—</strong></div>
+        </div>
 
-            console.log('Backend Configuration:');
-            console.log('WebSocket URL:', window.BACKEND_WS_URL);
-        })();
-    </script>
-    
-    <script src="/js/app.js"></script>
+        <div style="height:18px;"></div>
+
+        <div class="voting-wrap">
+            <div class="poster">
+                <img id="moviePoster" src="" alt="Постер фильма" />
+            </div>
+
+            <div class="voting-right">
+                <div class="movie-title" id="movieTitle">Загрузка...</div>
+                <div class="movie-meta muted" id="movieMeta">Описание и год</div>
+
+                <div class="vote-row">
+                    <button id="yesBtn" class="vote-btn vote-btn-like vote-btn like" onclick="vote('LIKE')">Да</button>
+                    <button id="noBtn" class="vote-btn vote-btn-dislike vote-btn dislike" onclick="vote('DISLIKE')">Нет</button>
+                </div>
+
+                <div id="votingNotice" class="muted" style="margin-top:8px;">Ожидание запуска... (кнопки будут доступны после начала)</div>
+
+                <div class="status-row" id="statusRow" style="margin-top:10px;">
+                    <!-- статусы участников -->
+                </div>
+
+                <div style="margin-top:16px;">
+                    <button class="btn btn-ghost" onclick="exitSession()">Выйти из сессии</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MATCH SCREEN -->
+    <div id="matchScreen" class="screen dark-card" style="text-align:center;">
+        <h2 id="matchTitle">Совпадение</h2>
+        <div style="height:12px;"></div>
+        <div class="match-poster" id="matchPosterWrap">
+            <img id="matchPoster" src="" alt="Постер" style="width:100%; height:100%; object-fit:cover;">
+        </div>
+        <div style="height:8px;"></div>
+        <div class="match-title" id="matchMovieTitle">Фильм совпал</div>
+        <p class="muted" id="matchSubtitle">Все участники проголосовали за этот фильм.</p>
+
+        <div style="display:flex; gap:10px; justify-content:center; margin-top:18px;">
+            <button class="btn btn-primary" onclick="nextMatch()">Дальше</button>
+            <button class="btn btn-ghost" onclick="exitSession()">Выйти</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast hidden">Уведомление</div>
+
+<!-- libs -->
+<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+
+<!-- app (external file) -->
+<script src="/js/app.js"></script>
 </body>
 </html>

@@ -1,642 +1,803 @@
-// ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
-function getDefaultWsUrl() {
-    const protocol = window.location.protocol;
-    const host = window.location.host;
-    return `${protocol}//${host}/ws`;
-}
+// app.js — полностью готовый файл
+// ==================================================
+// Примечание: этот файл расширяет твою прежнюю логику,
+// сохраняя совместимость с sessionServiceUrl и votingServiceUrl.
+// ==================================================
 
-// ===== СОСТОЯНИЕ ПРИЛОЖЕНИЯ =====
+/* ====== STATE ====== */
 const state = {
-    // Параметры сессии
     sessionId: null,
     participantId: null,
     sessionCode: null,
-    participantIds: [], // Список всех участников в сессии
+    participantIds: [],
+    participants: [], // [{id, name}]
+    isHost: false,
+    votingStarted: false,
 
-    // Состояние голосования
     currentMovieIndex: 0,
     movies: [],
     voted: false,
     votedDecision: null,
+    participantVotes: {},
 
-    // Статусы участников
-    participantVotes: {}, // объект для отслеживания голосов по participantId
-
-    // WebSocket
     stompClient: null,
     connected: false,
 
-    // Параметры бэкенда
-    // На production используем gateway, на локалке - напрямую
+    // backend urls (можно задавать из HTML как window.BACKEND_*)
     sessionServiceUrl: window.BACKEND_SESSION_URL || `${window.location.origin}/api/sessions`,
     votingServiceUrl: window.BACKEND_VOTING_URL || `${window.location.origin}/api/voting`,
     wsUrl: window.BACKEND_WS_URL || getDefaultWsUrl(),
 };
 
-// ===== ИНИЦИАЛИЗАЦИЯ =====
-document.addEventListener('DOMContentLoaded', () => {
-    checkUrlParams();
-});
+/* ====== HELPERS ====== */
+function getDefaultWsUrl() {
+    const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+    const host = window.location.host;
+    return `${protocol}//${host}/ws`;
+}
 
-// ===== УПРАВЛЕНИЕ ВКЛАДКАМИ =====
+function el(id) { return document.getElementById(id); }
+
+function showToast(text) {
+    const toast = el('toast');
+    toast.textContent = text;
+    toast.classList.remove('hidden');
+    // trigger visible
+    setTimeout(() => toast.classList.add('visible'), 50);
+    // hide
+    setTimeout(() => {
+        toast.classList.remove('visible');
+        setTimeout(() => toast.classList.add('hidden'), 350);
+    }, 3000);
+}
+
+function generateParticipantId() {
+    return 'p_' + Math.random().toString(36).slice(2, 11);
+}
+
+function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+    return Promise.race([
+        fetch(url, options),
+        new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`Запрос истёк (${timeoutMs}мс)`)), timeoutMs)
+        )
+    ]);
+}
+
+/* ====== UI tab logic ====== */
 function switchTab(tabName) {
-    // Скрыть все вкладки
-    document.querySelectorAll('.tab-content').forEach(tab => {
-        tab.classList.remove('active');
-    });
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
+    const joinPanel = el('joinPanel');
+    const createPanel = el('createPanel');
+    const tabJoin = el('tabJoin');
+    const tabCreate = el('tabCreate');
 
-    // Показать выбранную вкладку
-    document.getElementById(tabName + 'Tab').classList.add('active');
-    event.target.classList.add('active');
-
-    // Очистить ошибки
-    document.getElementById(tabName + 'Error').classList.add('hidden');
-}
-
-// ===== ПРОВЕРКА URL ПАРАМЕТРОВ =====
-function checkUrlParams() {
-    const params = new URLSearchParams(window.location.search);
-    const sessionId = params.get('session');
-
-    if (sessionId) {
-        // Автоматически присоединиться к сессии
-        state.sessionId = sessionId;
-        joinSessionDirect();
+    if (tabName === 'join') {
+        joinPanel.classList.remove('hidden');
+        createPanel.classList.add('hidden');
+        tabJoin.classList.add('active');
+        tabCreate.classList.remove('active');
+    } else {
+        joinPanel.classList.add('hidden');
+        createPanel.classList.remove('hidden');
+        tabJoin.classList.remove('active');
+        tabCreate.classList.add('active');
     }
+
+    // clear errors
+    ['joinError','createError'].forEach(id => {
+        const node = el(id);
+        if (node) node.classList.add('hidden');
+    });
 }
 
-// ===== СОЗДАНИЕ СЕССИИ =====
+/* ====== SESSION create / join ====== */
 async function createSession() {
     try {
-        const btn = event.target;
+        const btn = el('createBtn');
         btn.disabled = true;
         btn.textContent = 'Создание...';
 
         const response = await fetchWithTimeout(state.sessionServiceUrl, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
         }, 10000);
 
-        if (!response.ok) {
-            throw new Error(`Ошибка создания сессии (${response.status})`);
-        }
+        if (!response.ok) throw new Error(`Ошибка создания сессии (${response.status})`);
 
         const data = await response.json();
-        state.sessionId = data.sessionId;
-        state.sessionCode = data.code;
-        state.currentMovieIndex = parseInt(data.currentMovieIndex) || 0;
+        state.sessionId = data.sessionId || data.id || null;
+        state.sessionCode = data.code || (state.sessionId ? state.sessionId.substring(0,6).toUpperCase() : '—');
+        state.currentMovieIndex = parseInt(data.currentMovieIndex || 0, 10) || 0;
+        state.isHost = true;
         state.participantId = generateParticipantId();
 
-        // Сохраняем в localStorage
+        // persist
         localStorage.setItem('participantId', state.participantId);
         localStorage.setItem('sessionId', state.sessionId);
 
-        // Переходим на экран ожидания
+        // show welcome -> waiting
         showWaitingScreen();
 
-        // Подключаемся к WebSocket
+        // connect websocket (subscribe to participants/start/votes/match)
         connectWebSocket();
-    } catch (error) {
-        console.error('Ошибка:', error);
-        document.getElementById('createError').textContent = error.message;
-        document.getElementById('createError').classList.remove('hidden');
-        event.target.disabled = false;
-        event.target.textContent = 'Создать сессию';
+
+        // also optimistically add self to participants
+        state.participants = [{ id: state.participantId, name: 'Вы (хост)' }];
+        renderParticipants();
+
+        btn.textContent = 'Создать сессию';
+        btn.disabled = false;
+    } catch (err) {
+        console.error('createSession err', err);
+        const node = el('createError');
+        node.textContent = err.message || 'Не удалось создать сессию';
+        node.classList.remove('hidden');
+        el('createBtn').disabled = false;
+        el('createBtn').textContent = 'Создать сессию';
     }
 }
 
-
-
-// ===== ПРИСОЕДИНЕНИЕ К СЕССИИ =====
 async function joinSession() {
     try {
-        const link = document.getElementById('sessionLink').value.trim();
+        const link = el('sessionLink').value.trim();
+        if (!link) throw new Error('Введите ссылку сессии');
 
-        if (!link) {
-            throw new Error('Введите ссылку сессии');
+        let sessionId;
+        try {
+            const u = new URL(link);
+            sessionId = u.searchParams.get('session') || u.searchParams.get('id') || null;
+            if (!sessionId) {
+                // try parse last path segment
+                const seg = u.pathname.split('/').filter(Boolean).pop();
+                sessionId = seg;
+            }
+        } catch (e) {
+            throw new Error('Неверный формат ссылки');
         }
 
-        // Парсим sessionId из ссылки
-        const url = new URL(link);
-        const sessionId = url.searchParams.get('session');
-
-        if (!sessionId) {
-            throw new Error('Неверный формат ссылки. Должна быть /session=...');
-        }
+        if (!sessionId) throw new Error('Не найден sessionId в ссылке');
 
         state.sessionId = sessionId;
         state.participantId = generateParticipantId();
+        state.isHost = false;
 
-        // Сохраняем в localStorage
         localStorage.setItem('participantId', state.participantId);
         localStorage.setItem('sessionId', state.sessionId);
 
-        // Определяем sessionCode из базы
-        await fetchSessionCode(sessionId);
+        // try to fetch metadata (code, participants, votingStarted) if backend supports
+        await fetchSessionInfo(state.sessionId);
 
-        // Переходим на экран голосования
-        await initVoting();
-    } catch (error) {
-        console.error('Ошибка:', error);
-        document.getElementById('joinError').textContent = error.message;
-        document.getElementById('joinError').classList.remove('hidden');
+        // go to waiting screen and connect
+        showWaitingScreen();
+        connectWebSocket();
+    } catch (err) {
+        console.error('joinSession err', err);
+        const node = el('joinError');
+        node.textContent = err.message || 'Не удалось присоединиться';
+        node.classList.remove('hidden');
     }
 }
 
-// ===== ПРЯМОЕ ПРИСОЕДИНЕНИЕ =====
 async function joinSessionDirect() {
     try {
         state.participantId = generateParticipantId();
         localStorage.setItem('participantId', state.participantId);
         localStorage.setItem('sessionId', state.sessionId);
+        state.isHost = false;
 
-        await fetchSessionCode(state.sessionId);
-        await initVoting();
-    } catch (error) {
-        console.error('Ошибка при присоединении:', error);
-        document.getElementById('joinError').textContent = 'Не удалось присоединиться к сессии';
-        document.getElementById('joinError').classList.remove('hidden');
+        await fetchSessionInfo(state.sessionId);
+
+        showWaitingScreen();
+        connectWebSocket();
+    } catch (err) {
+        console.error('joinSessionDirect err', err);
+        el('joinError').textContent = 'Не удалось присоединиться к сессии';
+        el('joinError').classList.remove('hidden');
         showWelcomeScreen();
     }
 }
 
-// ===== ПОЛУЧЕНИЕ КОДА СЕССИИ =====
-async function fetchSessionCode(sessionId) {
+async function fetchSessionInfo(sessionId) {
     try {
-        // Пытаемся получить информацию о сессии по её ID
-        // Заметим: серверной может потребоваться добавить новый endpoint для получения по sessionId
-        // Пока используем код из sessionId
-        const response = await fetch(`${state.sessionServiceUrl}/${sessionId}`, {
-            method: 'GET',
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            state.sessionCode = data.code;
-            state.currentMovieIndex = parseInt(data.currentMovieIndex) || 0;
-            console.log('Получен код сессии:', state.sessionCode, 'Индекс фильма:', state.currentMovieIndex);
-        } else {
-            console.warn('Не удалось получить информацию о сессии');
-            // Используем первые несколько символов sessionId как fallback
-            state.sessionCode = sessionId.substring(0, 6).toUpperCase();
+        const resp = await fetch(`${state.sessionServiceUrl}/${sessionId}`);
+        if (!resp.ok) {
+            // fallback to using first 6 chars as code
+            state.sessionCode = sessionId.substring(0,6).toUpperCase();
+            return;
         }
-    } catch (error) {
-        console.warn('Не удалось получить код сессии:', error);
-        // Используем первые несколько символов sessionId как fallback
-        state.sessionCode = sessionId.substring(0, 6).toUpperCase();
+        const data = await resp.json();
+        state.sessionCode = data.code || state.sessionCode || sessionId.substring(0,6).toUpperCase();
+        // if backend returns participants or votingStarted, use them
+        if (Array.isArray(data.participants)) {
+            state.participants = data.participants;
+        }
+        state.votingStarted = !!data.votingStarted;
+    } catch (err) {
+        console.warn('fetchSessionInfo warning', err);
+        state.sessionCode = state.sessionCode || (state.sessionId ? state.sessionId.substring(0,6).toUpperCase() : '—');
     }
 }
 
-// ===== ИНИЦИАЛИЗАЦИЯ ГОЛОСОВАНИЯ =====
-async function initVoting() {
-    try {
-        console.log('[initVoting] 🎬 Начало инициализации голосования');
-        
-        // Загружаем фильмы
-        console.log('[initVoting] 🍿 Загрузка фильмов...');
-        const response = await fetch(`${state.votingServiceUrl}/movies`);
-
-        if (!response.ok) {
-            throw new Error(`Ошибка загрузки фильмов (${response.status})`);
-        }
-
-        state.movies = await response.json();
-        console.log('[initVoting] ✅ Фильмы загруженны:', state.movies.length);
-
-        if (state.movies.length === 0) {
-            throw new Error('Нет доступных фильмов');
-        }
-
-        // Подключаемся к WebSocket
-        console.log('[initVoting] 🔌 Подключение WebSocket...');
-        await connectWebSocketWithTimeout(5000);
-        console.log('[initVoting] ✅ WebSocket подключен');
-
-        // Загружаем первый фильм
-        console.log('[initVoting] 🎞️ Загрузка первого фильма...');
-        loadCurrentMovie();
-        console.log('[initVoting] ✅ Первый фильм загружен');
-
-        // Переходим на экран голосования
-        console.log('[initVoting] 📺 Переход на экран голосования...');
-        showVotingScreen();
-        console.log('[initVoting] ✅ Экран голосования показан');
-        
-    } catch (error) {
-        console.error('[initVoting] ❌ Ошибка:', error);
-        const errorMsg = error.message || 'Неизвестная ошибка инициализации голосования';
-        document.getElementById('joinError').textContent = errorMsg;
-        document.getElementById('joinError').classList.remove('hidden');
-    }
-}
-
-// ===== WEBSOCKET =====
+/* ====== WEBSOCKET ====== */
 function connectWebSocket() {
-    console.log('[connectWebSocket] 🔗 Подключение к WebSocket...');
-    const socket = new SockJS(state.wsUrl);
-    state.stompClient = Stomp.over(socket);
-
-    state.stompClient.connect(
-        {},
-        (frame) => {
-            console.log('[connectWebSocket] ✅ WebSocket подключен:', frame);
-            state.connected = true;
-
-            // Подписываемся на обновления голосов
-            state.stompClient.subscribe(
-                `/topic/session/${state.sessionId}/votes`,
-                handleVoteUpdate
-            );
-            console.log('[connectWebSocket] 📨 Подписка на голоса');
-
-            // Подписываемся на совпадения
-            state.stompClient.subscribe(
-                `/topic/session/${state.sessionId}/match`,
-                handleMatchMessage
-            );
-            console.log('[connectWebSocket] 📨 Подписка на совпадения');
-        },
-        (error) => {
-            console.error('[connectWebSocket] ❌ Ошибка подключения:', error);
-            state.connected = false;
-            // Пытаемся переподключиться через 3 секунды
-            setTimeout(connectWebSocket, 3000);
-        }
-    );
-}
-
-// ===== WEBSOCKET С ТАЙМАУТОМ =====
-function connectWebSocketWithTimeout(timeoutMs = 5000) {
-    return new Promise((resolve, reject) => {
-        console.log('[connectWebSocketWithTimeout] ⏱️ Подключение WebSocket с таймаутом:', timeoutMs);
-        
-        const timeout = setTimeout(() => {
-            console.error('[connectWebSocketWithTimeout] ⏱️ Таймаут WebSocket!');
-            if (state.stompClient) {
-                state.stompClient.disconnect(() => {
-                    console.log('[connectWebSocketWithTimeout] WebSocket отключен по таймауту');
-                });
-            }
-            reject(new Error(`WebSocket таймаут (${timeoutMs}мс)`));
-        }, timeoutMs);
-
-        const socket = new SockJS(state.wsUrl);
-        state.stompClient = Stomp.over(socket);
-
-        state.stompClient.connect(
-            {},
-            (frame) => {
-                clearTimeout(timeout);
-                console.log('[connectWebSocketWithTimeout] ✅ WebSocket успешно подключен');
-                state.connected = true;
-
-                // Подписываемся на обновления голосов
-                state.stompClient.subscribe(
-                    `/topic/session/${state.sessionId}/votes`,
-                    handleVoteUpdate
-                );
-
-                // Подписываемся на совпадения
-                state.stompClient.subscribe(
-                    `/topic/session/${state.sessionId}/match`,
-                    handleMatchMessage
-                );
-
-                resolve();
-            },
-            (error) => {
-                clearTimeout(timeout);
-                console.error('[connectWebSocketWithTimeout] ❌ Ошибка подключения:', error);
-                state.connected = false;
-                reject(error);
-            }
-        );
-    });
-}
-
-// ===== ОБРАБОТКА ОБНОВЛЕНИЯ ГОЛОСА =====
-function handleVoteUpdate(message) {
-    const vote = JSON.parse(message.body);
-    console.log('Получен голос:', vote);
-
-    // Добавляем участника в список, если его еще там нет
-    if (!state.participantIds.includes(vote.participantId)) {
-        state.participantIds.push(vote.participantId);
-    }
-
-    // Сохраняем голос участника по текущему фильму
-    state.participantVotes[vote.participantId] = vote.decision;
-
-    // Обновляем визуальный статус
-    if (vote.participantId === state.participantId) {
-        updateParticipantStatus(1, vote.decision);
-    } else {
-        updateParticipantStatus(2, vote.decision);
-    }
-
-    // Если оба участника проголосовали - переходим к следующему фильму
-    if (Object.keys(state.participantVotes).length >= 2) {
-        moveToNextMovie();
-    }
-}
-
-// ===== ОБРАБОТКА СОВПАДЕНИЯ =====
-function handleMatchMessage(message) {
-    const match = JSON.parse(message.body);
-    console.log('Совпадение:', match);
-
-    // Отключаем кнопки голосования
-    document.getElementById('yesBtn').disabled = true;
-    document.getElementById('noBtn').disabled = true;
-
-    // Ждем 1 секунду перед показом экрана совпадения
-    setTimeout(() => {
-        showMatchScreen(match);
-        playConfetti();
-    }, 1000);
-}
-
-// ===== ГОЛОСОВАНИЕ =====
-async function vote(decision) {
-    if (state.voted) {
-        return; // Уже проголосовали за этот фильм
-    }
-
-    const currentMovie = state.movies[state.currentMovieIndex];
-
-    try {
-        // Визуальный обратный связь
-        state.voted = true;
-        state.votedDecision = decision;
-
-        // Отключаем кнопки
-        document.getElementById('yesBtn').disabled = true;
-        document.getElementById('noBtn').disabled = true;
-
-        // Визуально показываем выбор
-        if (decision === 'LIKE') {
-            document.getElementById('yesBtn').classList.add('voted');
-            updateParticipantStatus(1, decision);
-        } else {
-            document.getElementById('noBtn').classList.add('voted');
-            updateParticipantStatus(1, decision);
-        }
-
-        // Отправляем голос через WebSocket
-        if (state.connected && state.stompClient) {
-            state.stompClient.send('/app/vote', {}, JSON.stringify({
-                sessionId: state.sessionId,
-                participantId: state.participantId,
-                movieId: currentMovie.id,
-                decision: decision,
-            }));
-        } else {
-            throw new Error('WebSocket не подключен');
-        }
-    } catch (error) {
-        console.error('Ошибка голосования:', error);
-        state.voted = false;
-        document.getElementById('yesBtn').disabled = false;
-        document.getElementById('noBtn').disabled = false;
-    }
-}
-
-// ===== ПЕРЕХОД К СЛЕДУЮЩЕМУ ФИЛЬМУ =====
-function moveToNextMovie() {
-    // Ждем 1-2 секунды перед переходом
-    setTimeout(() => {
-        state.currentMovieIndex = (state.currentMovieIndex + 1) % state.movies.length;
-        state.voted = false;
-        state.votedDecision = null;
-        state.participantVotes = {}; // Очищаем голоса для следующего фильма
-
-        // отправляем обновление индекса на бэкенд
-        if (state.connected && state.stompClient) {
-            state.stompClient.send('/app/update-movie-index', {}, JSON.stringify({
-                sessionId: state.sessionId,
-                movieIndex: state.currentMovieIndex,
-            }));
-        }
-
-        // Проверяем, не загружаем ли мы первый фильм снова
-        if (state.currentMovieIndex === 0) {
-            console.log('Перезагружаем список фильмов...');
-            // Можно обновить список фильмов, но пока просто циклируем
-        }
-
-        loadCurrentMovie();
-    }, 2000);
-}
-
-// ===== ЗАГРУЗКА ТЕКУЩЕГО ФИЛЬМА =====
-function loadCurrentMovie() {
-    const movie = state.movies[state.currentMovieIndex];
-
-    if (!movie) {
-        console.error('Фильм не найден');
+    if (!state.sessionId) {
+        console.warn('connectWebSocket: no sessionId');
         return;
     }
 
-    // Обновляем UI
-    document.getElementById('movieTitle').textContent = movie.title;
-    document.getElementById('movieCounter').textContent = `Фильм ${state.currentMovieIndex + 1} из ${state.movies.length}`;
+    try {
+        const socket = new SockJS(state.wsUrl);
+        state.stompClient = Stomp.over(socket);
+        state.stompClient.debug = function() {}; // silence logs
 
-    // Загружаем постер
-    const imageUrl = movie.posterPath
-        ? `https://image.tmdb.org/t/p/w500${movie.posterPath}`
-        : 'https://via.placeholder.com/300x450?text=No+Image';
+        state.stompClient.connect({}, (frame) => {
+            console.log('WS connected', frame);
+            state.connected = true;
 
-    document.getElementById('moviePoster').src = imageUrl;
-    document.getElementById('moviePoster').alt = movie.title;
+            // subscribe to participants updates (backend should broadcast participants list)
+            state.stompClient.subscribe(`/topic/session/${state.sessionId}/participants`, (msg) => {
+                try {
+                    const payload = JSON.parse(msg.body);
+                    handleParticipantsUpdate(payload);
+                } catch (e) { console.warn(e); }
+            });
 
-    // Сбрасываем состояние кнопок
-    document.getElementById('yesBtn').classList.remove('voted');
-    document.getElementById('noBtn').classList.remove('voted');
-    document.getElementById('yesBtn').disabled = false;
-    document.getElementById('noBtn').disabled = false;
+            // subscribe to start trigger
+            state.stompClient.subscribe(`/topic/session/${state.sessionId}/start`, (msg) => {
+                try {
+                    const payload = JSON.parse(msg.body || '{}');
+                    handleStartMessage(payload);
+                } catch (e) { console.warn(e); }
+            });
 
-    // Сбрасываем статусы участников
-    updateParticipantStatus(1, null);
-    updateParticipantStatus(2, null);
-}
+            // subscribe to votes updates
+            state.stompClient.subscribe(`/topic/session/${state.sessionId}/votes`, (msg) => {
+                try {
+                    handleVoteUpdate(msg);
+                } catch (e) { console.warn(e); }
+            });
 
-// ===== ОБНОВЛЕНИЕ СТАТУСА УЧАСТНИКА =====
-function updateParticipantStatus(participantNum, decision) {
-    const statusEl = document.getElementById(`participant${participantNum}Status`);
+            // subscribe to match (server-driven)
+            state.stompClient.subscribe(`/topic/session/${state.sessionId}/match`, (msg) => {
+                try {
+                    handleMatchMessage(msg);
+                } catch (e) { console.warn(e); }
+            });
 
-    if (decision === 'LIKE') {
-        statusEl.textContent = '✅';
-        statusEl.style.color = '#11998e';
-    } else if (decision === 'DISLIKE') {
-        statusEl.textContent = '❌';
-        statusEl.style.color = '#eb3349';
-    } else {
-        statusEl.textContent = '⏳';
-        statusEl.style.color = '#999';
+            // Optionally notify backend about presence
+            try {
+                state.stompClient.send('/app/participant-join', {}, JSON.stringify({
+                    sessionId: state.sessionId,
+                    participantId: state.participantId,
+                }));
+            } catch (e) {
+                // not critical
+            }
+
+        }, (err) => {
+            console.error('WS connect error', err);
+            state.connected = false;
+            setTimeout(connectWebSocket, 3000);
+        });
+    } catch (err) {
+        console.error('connectWebSocket exception', err);
     }
 }
 
-// ===== ПОКАЗ ЭКРАНА СОВПАДЕНИЯ =====
-function showMatchScreen(match) {
-    const imageUrl = match.posterPath
-        ? `https://image.tmdb.org/t/p/w500${match.posterPath}`
-        : 'https://via.placeholder.com/250x375?text=No+Image';
+/* ====== HANDLERS: participants / start / votes / match ====== */
+function handleParticipantsUpdate(payload) {
+    // payload expected: { participants: [{id, name}], newParticipantId: 'p_xxx' }
+    if (!payload) return;
+    if (Array.isArray(payload.participants)) {
+        state.participants = payload.participants.slice();
+    } else if (payload.participant) {
+        // single participant object
+        state.participants = state.participants.filter(Boolean);
+        state.participants.push(payload.participant);
+    }
 
-    document.getElementById('matchPoster').src = imageUrl;
-    document.getElementById('matchTitle').textContent = match.movieTitle;
+    // ensure current participant present
+    if (!state.participants.some(p => p.id === state.participantId)) {
+        state.participants.push({ id: state.participantId, name: 'Вы' });
+    }
 
-    showScreen('matchScreen');
+    renderParticipants();
+
+    if (payload.newParticipantId && payload.newParticipantId !== state.participantId) {
+        showToast('Новый участник подключился');
+    }
 }
 
-// ===== СЛЕДУЮЩЕЕ СОВПАДЕНИЕ =====
+function handleStartMessage(payload) {
+    state.votingStarted = true;
+    showToast('Выбор начат');
+    // initialize voting flow
+    initVoting().catch(err => {
+        console.error('initVoting after start error', err);
+        showToast('Не удалось начать голосование');
+    });
+}
+
+function handleVoteUpdate(message) {
+    const vote = JSON.parse(message.body);
+    // vote expected: { sessionId, participantId, movieId, decision }
+    if (!vote || !vote.participantId) return;
+
+    // ensure participant in list
+    if (!state.participants.some(p => p.id === vote.participantId)) {
+        state.participants.push({ id: vote.participantId, name: 'Участник' });
+        renderParticipants();
+    }
+
+    // store vote for current movie
+    state.participantVotes[vote.participantId] = vote.decision;
+    updateParticipantStatusById(vote.participantId, 'voted');
+
+    // If everyone voted -> proceed
+    const required = state.participants.length || Math.max(2, Object.keys(state.participantVotes).length);
+    if (Object.keys(state.participantVotes).length >= required) {
+        // determine if all voted LIKE for match
+        const votes = Object.values(state.participantVotes);
+        const allLike = votes.length > 0 && votes.every(v => v === 'LIKE');
+
+        if (allLike) {
+            // if server sends match topic it will be handled; also we show local match
+            const currentMovie = state.movies[state.currentMovieIndex];
+            const match = {
+                movieTitle: currentMovie ? currentMovie.title : 'Фильм',
+                posterPath: currentMovie ? currentMovie.posterPath : null
+            };
+            // small delay to match UX
+            setTimeout(() => {
+                showMatchScreen(match);
+            }, 800);
+        } else {
+            // move to next movie
+            setTimeout(() => {
+                moveToNextMovie();
+            }, 800);
+        }
+    }
+}
+
+function handleMatchMessage(message) {
+    // server-provided match payload
+    const match = JSON.parse(message.body);
+    // map to our expected format
+    showMatchScreen(match);
+}
+
+/* ====== RENDER / UI helpers ====== */
+function renderParticipants() {
+    const list = el('participantsList');
+    if (!list) return;
+    list.innerHTML = '';
+
+    state.participants.forEach((p, idx) => {
+        const item = document.createElement('div');
+        item.className = 'participant-item';
+
+        const avatar = document.createElement('div');
+        avatar.className = 'avatar';
+        // avatar text: first two chars of id or name
+        const nameForAvatar = (p.name && p.name !== 'Вы') ? p.name : (p.id || 'U');
+        avatar.textContent = (nameForAvatar.slice(0,2)).toUpperCase();
+
+        const meta = document.createElement('div');
+        meta.className = 'p-meta';
+        const nameEl = document.createElement('div');
+        nameEl.className = 'p-name';
+        nameEl.textContent = (p.id === state.participantId) ? 'Вы' : (p.name || `Участник ${idx+1}`);
+
+        const sub = document.createElement('div');
+        sub.className = 'p-sub';
+        sub.textContent = (p.id === state.participantId && state.isHost) ? 'Организатор (хост)' : 'Ожидает начала';
+
+        meta.appendChild(nameEl);
+        meta.appendChild(sub);
+
+        const status = document.createElement('div');
+        status.className = 'p-status p-status-indicator wait';
+        status.id = `status-${p.id}`;
+        status.textContent = 'Ожидает';
+
+        item.appendChild(avatar);
+        item.appendChild(meta);
+        item.appendChild(status);
+
+        list.appendChild(item);
+    });
+
+    // show start button only for host
+    const startBtn = el('startBtn');
+    if (state.isHost) startBtn.classList.remove('hidden');
+    else startBtn.classList.add('hidden');
+
+    // fill invite link and code
+    const codeText = el('waitingCodeText');
+    if (codeText) codeText.textContent = state.sessionCode || (state.sessionId ? state.sessionId.substring(0,6).toUpperCase() : '—');
+
+    const inviteInput = el('inviteLink');
+    if (inviteInput) inviteInput.value = `${window.location.origin}/?session=${state.sessionId}`;
+}
+
+function updateParticipantStatusById(participantId, status) {
+    const node = el(`status-${participantId}`);
+    if (!node) return;
+    if (status === 'voted') {
+        node.textContent = 'Проголосовал';
+        node.classList.remove('wait');
+        node.classList.add('voted');
+    } else {
+        node.textContent = 'Ожидает';
+        node.classList.remove('voted');
+        node.classList.add('wait');
+    }
+
+    // also update the summary statusRow on voting screen
+    renderStatusRow();
+}
+
+function renderStatusRow() {
+    const row = el('statusRow');
+    if (!row) return;
+    row.innerHTML = '';
+
+    state.participants.forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'status-item';
+        const voted = state.participantVotes[p.id];
+        div.textContent = (p.id === state.participantId) ? 'Вы: ' + (voted ? 'Проголосовал' : 'Ожидает') : ((voted ? 'Проголосовал' : 'Ожидает') + ` (${p.id === state.participantId ? 'Вы' : 'Участник'})`);
+        row.appendChild(div);
+    });
+}
+
+/* ====== LOBBY actions ====== */
+function copyToClipboard() {
+    const link = el('inviteLink').value;
+    const btn = el('copyInviteBtn');
+    if (!navigator.clipboard) {
+        // fallback
+        const tmp = document.createElement('textarea');
+        tmp.value = link;
+        document.body.appendChild(tmp);
+        tmp.select();
+        try { document.execCommand('copy'); showToast('Ссылка скопирована'); } catch (e) { showToast('Не удалось скопировать'); }
+        tmp.remove();
+        return;
+    }
+    navigator.clipboard.writeText(link).then(() => {
+        const original = btn.textContent;
+        btn.textContent = 'Скопировано';
+        setTimeout(() => btn.textContent = original, 1500);
+    }).catch(() => showToast('Не удалось скопировать'));
+}
+
+function pasteFromClipboard() {
+    if (!navigator.clipboard) {
+        showToast('Clipboard API недоступен');
+        return;
+    }
+    navigator.clipboard.readText().then(t => {
+        el('sessionLink').value = t;
+    });
+}
+
+function startVoting() {
+    if (!state.isHost) return;
+    // notify server to broadcast start (server should publish to /topic/session/{id}/start)
+    if (state.connected && state.stompClient) {
+        try {
+            state.stompClient.send('/app/start-voting', {}, JSON.stringify({ sessionId: state.sessionId }));
+        } catch (e) {
+            console.warn('startVoting send failed, falling back to local start', e);
+            // fallback to local start
+            handleStartMessage({});
+        }
+    } else {
+        // no ws: start locally
+        handleStartMessage({});
+    }
+}
+
+/* ====== VOTING flow ====== */
+async function initVoting() {
+    try {
+        // load movies
+        const resp = await fetch(`${state.votingServiceUrl}/movies`);
+        if (!resp.ok) throw new Error(`Ошибка загрузки фильмов (${resp.status})`);
+        state.movies = await resp.json();
+
+        if (!Array.isArray(state.movies) || state.movies.length === 0) {
+            throw new Error('Нет доступных фильмов');
+        }
+
+        // reset voting state
+        state.currentMovieIndex = state.currentMovieIndex || 0;
+        state.voted = false;
+        state.votedDecision = null;
+        state.participantVotes = {};
+
+        // show voting screen
+        loadCurrentMovie();
+        showVotingScreen();
+
+        // update UI
+        el('votingSessionCode').textContent = state.sessionCode || (state.sessionId ? state.sessionId.substring(0,6).toUpperCase() : '—');
+        el('votingNotice').textContent = 'Голосование началось';
+        // enable buttons
+        el('yesBtn').disabled = false;
+        el('noBtn').disabled = false;
+
+        // render statuses
+        renderStatusRow();
+    } catch (err) {
+        console.error('initVoting err', err);
+        el('joinError').textContent = err.message || 'Ошибка инициализации голосования';
+        el('joinError').classList.remove('hidden');
+    }
+}
+
+function vote(decision) {
+    if (state.voted || !state.votingStarted) return;
+
+    const movie = state.movies[state.currentMovieIndex];
+    if (!movie) return;
+
+    state.voted = true;
+    state.votedDecision = decision;
+
+    // disable buttons
+    el('yesBtn').disabled = true;
+    el('noBtn').disabled = true;
+
+    // local visual: mark own status
+    updateParticipantStatusById(state.participantId, 'voted');
+
+    // send via websocket
+    if (state.connected && state.stompClient) {
+        try {
+            state.stompClient.send('/app/vote', {}, JSON.stringify({
+                sessionId: state.sessionId,
+                participantId: state.participantId,
+                movieId: movie.id,
+                decision: decision
+            }));
+        } catch (e) {
+            console.warn('vote send failed', e);
+        }
+    } else {
+        // fallback: just store locally and check if all voted
+        state.participantVotes[state.participantId] = decision;
+        renderStatusRow();
+        const required = state.participants.length || 2;
+        if (Object.keys(state.participantVotes).length >= required) {
+            const votes = Object.values(state.participantVotes);
+            if (votes.every(v => v === 'LIKE')) {
+                showMatchScreen({ movieTitle: movie.title, posterPath: movie.posterPath });
+            } else {
+                moveToNextMovie();
+            }
+        }
+    }
+}
+
+function moveToNextMovie() {
+    // reset votes
+    state.participantVotes = {};
+    state.voted = false;
+    state.votedDecision = null;
+    // reset participant statuses
+    state.participants.forEach(p => updateParticipantStatusById(p.id, 'wait'));
+
+    // advance index
+    state.currentMovieIndex = (state.currentMovieIndex + 1) % state.movies.length;
+
+    // inform backend of index change (optional)
+    if (state.connected && state.stompClient) {
+        try {
+            state.stompClient.send('/app/update-movie-index', {}, JSON.stringify({
+                sessionId: state.sessionId,
+                movieIndex: state.currentMovieIndex
+            }));
+        } catch (e) { /* ignore */ }
+    }
+
+    loadCurrentMovie();
+}
+
+function loadCurrentMovie() {
+    const movie = state.movies[state.currentMovieIndex];
+    if (!movie) {
+        el('movieTitle').textContent = 'Фильм не найден';
+        el('moviePoster').src = '';
+        el('movieCounter').textContent = `Фильм ${state.currentMovieIndex+1} из ${state.movies.length || 0}`;
+        return;
+    }
+
+    el('movieTitle').textContent = movie.title || 'Без названия';
+    el('movieMeta').textContent = movie.year ? `${movie.year} • ${movie.genre || ''}` : (movie.overview || '');
+    el('movieCounter').textContent = `Фильм ${state.currentMovieIndex+1} из ${state.movies.length}`;
+
+    const imageUrl = movie.posterPath ? `https://image.tmdb.org/t/p/w500${movie.posterPath}` : 'https://via.placeholder.com/340x510?text=No+Image';
+    el('moviePoster').src = imageUrl;
+    el('moviePoster').alt = movie.title || 'Poster';
+
+    // reset UI vote buttons
+    el('yesBtn').classList.remove('voted');
+    el('noBtn').classList.remove('voted');
+    el('yesBtn').disabled = false;
+    el('noBtn').disabled = false;
+
+    // reset status row
+    renderStatusRow();
+}
+
+/* ====== MATCH screen ====== */
+function showMatchScreen(match) {
+    // payload: { movieTitle, posterPath }
+    hideAllScreens();
+    el('matchTitle').textContent = 'Совпадение';
+    el('matchMovieTitle').textContent = match.movieTitle || 'Фильм';
+    const url = match.posterPath ? `https://image.tmdb.org/t/p/w500${match.posterPath}` : 'https://via.placeholder.com/260x390?text=No+Image';
+    el('matchPoster').src = url;
+    el('matchScreen').classList.add('active');
+
+    // small confetti effect (CSS rectangles)
+    playConfetti();
+}
+
 function nextMatch() {
+    // reset and go back to voting
     hideAndResetVoting();
     showVotingScreen();
 }
 
-// ===== ВЫХОД ИЗ СЕССИИ =====
-function exitSession() {
-    // Отключаемся от WebSocket
-    if (state.stompClient && state.connected) {
-        state.stompClient.disconnect(() => {
-            console.log('Отключены от WebSocket');
-        });
-    }
-
-    // Очищаем состояние
-    state.sessionId = null;
-    state.participantId = null;
-    localStorage.removeItem('participantId');
-    localStorage.removeItem('sessionId');
-
-    // Возвращаемся на главный экран
-    showWelcomeScreen();
+/* ====== NAVIGATION / screens ====== */
+function hideAllScreens() {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
 }
-
-// ===== ВОЗВРАТ НА ГЛАВНУЮ =====
-function goBackToWelcome() {
-    if (state.stompClient && state.connected) {
-        state.stompClient.disconnect(() => {
-            console.log('Отключены от WebSocket');
-        });
-    }
-
-    state.sessionId = null;
-    state.participantId = null;
-    localStorage.removeItem('participantId');
-    localStorage.removeItem('sessionId');
-
-    showWelcomeScreen();
-}
-
-// ===== УПРАВЛЕНИЕ ЭКРАНАМИ =====
-function showScreen(screenId) {
-    document.querySelectorAll('.screen').forEach(screen => {
-        screen.classList.remove('active');
-    });
-    document.getElementById(screenId).classList.add('active');
-}
-
 function showWelcomeScreen() {
-    showScreen('welcomeScreen');
+    hideAllScreens();
+    el('welcomeScreen').classList.add('active');
 }
-
 function showWaitingScreen() {
-    const shareLink = `${window.location.origin}/?session=${state.sessionId}`;
-    document.getElementById('inviteLink').value = shareLink;
+    hideAllScreens();
+    // fill link + code
+    el('inviteLink').value = `${window.location.origin}/?session=${state.sessionId}`;
+    el('waitingCodeText').textContent = state.sessionCode || (state.sessionId ? state.sessionId.substring(0,6).toUpperCase() : '—');
+    el('waitingScreen').classList.add('active');
 
-    const codeElement = document.querySelector('#waitingCode strong');
-    if (codeElement) {
-        codeElement.textContent = state.sessionCode || state.sessionId.substring(0, 6);
+    // render participants
+    if (!state.participants || state.participants.length === 0) {
+        state.participants = [{ id: state.participantId, name: state.isHost ? 'Вы (хост)' : 'Вы' }];
     }
-
-    showScreen('waitingScreen');
+    renderParticipants();
 }
-
 function showVotingScreen() {
-    showScreen('votingScreen');
+    hideAllScreens();
+    state.votingStarted = true;
+    el('votingScreen').classList.add('active');
 }
-
 function hideAndResetVoting() {
-    // Сбрасываем состояние голосования
     state.voted = false;
     state.votedDecision = null;
-    state.participantVotes = {}; // Очищаем голоса
-
-    // Сбрасываем UI
-    document.getElementById('yesBtn').classList.remove('voted');
-    document.getElementById('noBtn').classList.remove('voted');
-    document.getElementById('yesBtn').disabled = false;
-    document.getElementById('noBtn').disabled = false;
-
-    updateParticipantStatus(1, null);
-    updateParticipantStatus(2, null);
+    state.participantVotes = {};
+    state.participants.forEach(p => updateParticipantStatusById(p.id, 'wait'));
+    el('yesBtn').disabled = false;
+    el('noBtn').disabled = false;
 }
 
-// ===== КОПИРОВАНИЕ В БУФЕР ОБМЕНА =====
-function copyToClipboard() {
-    const link = document.getElementById('inviteLink').value;
-    navigator.clipboard.writeText(link).then(() => {
-        const btn = event.target;
-        const originalText = btn.textContent;
-        btn.textContent = 'Скопировано!';
-        setTimeout(() => {
-            btn.textContent = originalText;
-        }, 2000);
-    }).catch(err => {
-        console.error('Не удалось скопировать:', err);
-    });
+/* ====== SESSION exit / back ====== */
+function exitSession() {
+    // disconnect websocket
+    if (state.stompClient && state.connected) {
+        try {
+            state.stompClient.disconnect();
+        } catch (e) { /* ignore */ }
+        state.connected = false;
+    }
+
+    // clear local state
+    state.sessionId = null;
+    state.participantId = null;
+    state.participants = [];
+    state.votingStarted = false;
+    localStorage.removeItem('participantId');
+    localStorage.removeItem('sessionId');
+
+    showWelcomeScreen();
 }
 
-// ===== ЭФФЕКТ КОНФЕТТИ =====
+function goBackToWelcome() {
+    // disconnect, but keep local session? For safety we clear
+    exitSession();
+}
+
+/* ====== CONFETTI (CSS rectangles) ====== */
 function playConfetti() {
-    const confettiCount = 50;
-    const colors = ['#667eea', '#764ba2', '#11998e', '#38ef7d', '#eb3349', '#f45c43'];
+    const count = 36;
+    for (let i = 0; i < count; i++) {
+        const c = document.createElement('div');
+        c.style.position = 'fixed';
+        c.style.top = '-10px';
+        c.style.left = Math.random() * 100 + '%';
+        c.style.width = (6 + Math.random() * 10) + 'px';
+        c.style.height = (10 + Math.random() * 16) + 'px';
+        c.style.background = ['#6366f1','#4f46e5','#10b981','#06b6d4','#f97316'][Math.floor(Math.random()*5)];
+        c.style.opacity = 0.95;
+        c.style.borderRadius = '2px';
+        c.style.transform = `rotate(${Math.random()*360}deg)`;
+        c.style.zIndex = 9999;
+        c.style.pointerEvents = 'none';
+        c.style.transition = 'transform 2.4s cubic-bezier(.2,.9,.2,1), top 2.4s ease, opacity 2.4s ease';
+        document.body.appendChild(c);
 
-    for (let i = 0; i < confettiCount; i++) {
-        const confetti = document.createElement('div');
-        confetti.className = 'confetti';
-        confetti.textContent = ['🎬', '🎉', '⭐', '🎊'][Math.floor(Math.random() * 4)];
-        confetti.style.left = Math.random() * 100 + '%';
-        confetti.style.top = '-10px';
-        confetti.style.fontSize = (Math.random() * 20 + 20) + 'px';
-        confetti.style.opacity = Math.random() * 0.7 + 0.3;
-        confetti.style.animation = `confettifall ${Math.random() * 2 + 2}s ease-in forwards`;
-
-        document.body.appendChild(confetti);
-
-        // Удаляем элемент после анимации
+        const destX = (Math.random()*60 - 30);
+        const destY = 100 + Math.random()*40;
         setTimeout(() => {
-            confetti.remove();
-        }, 3000);
+            c.style.top = destY + 'vh';
+            c.style.transform = `translateX(${destX}vw) rotate(${Math.random()*720}deg)`;
+            c.style.opacity = 0;
+        }, 50);
+
+        setTimeout(() => c.remove(), 2600);
     }
 }
 
-// ===== УТИЛИТЫ =====
-function generateParticipantId() {
-    return 'participant_' + Math.random().toString(36).substr(2, 9);
-}
+/* ====== INIT on load ====== */
+document.addEventListener('DOMContentLoaded', () => {
+    // wire up UI initial text
+    const env = el('envInfo');
+    if (env) {
+        env.textContent = `WebSocket: ${state.wsUrl}, Voting API: ${state.votingServiceUrl}`;
+    }
 
-// ===== FETCH С ТАЙМАУТОМ =====
-function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
-    return Promise.race([
-        fetch(url, options),
-        new Promise((_, reject) =>
-            setTimeout(() => reject(new Error(`Запрос истёк (${timeoutMs}мс) - сервис недоступен`)), timeoutMs)
-        )
-    ]);
-}
+    // load local participant/session if exist
+    const savedPid = localStorage.getItem('participantId');
+    const savedSid = localStorage.getItem('sessionId');
+    if (savedPid && savedSid) {
+        // try direct join
+        state.participantId = savedPid;
+        state.sessionId = savedSid;
+        // fetch session code if possible, then go to waiting
+        fetchSessionInfo(state.sessionId).then(() => {
+            // join directly only if user expects it
+            // We won't auto-join the WS here to avoid surprising behaviour,
+            // but if URL contains ?session=.. we'll auto join below (checkUrlParams)
+            // showWelcomeScreen();
+        }).catch(()=>{});
+    }
 
-// ===== ОБРАБОТКА ОШИБОК =====
-window.addEventListener('error', (event) => {
-    console.error('Глобальная ошибка:', event.error);
+    // attach url-check for direct joins
+    checkUrlParams();
+
+    // small: if user toggles tab buttons (from html), ensure join is default
+    switchTab('join');
 });
 
-window.addEventListener('unhandledrejection', (event) => {
-    console.error('Необработанное отклонение Promise:', event.reason);
-});
+/* ====== URL params check (auto join) ====== */
+function checkUrlParams() {
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get('session');
+    if (sessionId) {
+        state.sessionId = sessionId;
+        joinSessionDirect();
+    }
+}
+
+/* ====== small helpers for UI events ====== */
+// pasteFromClipboard and copyToClipboard implemented above
+
+// expose some functions to global (used by inline onclick)
+window.switchTab = switchTab;
+window.createSession = createSession;
+window.joinSession = joinSession;
+window.startVoting = startVoting;
+window.copyToClipboard = copyToClipboard;
+window.pasteFromClipboard = pasteFromClipboard;
+window.exitSession = exitSession;
+window.goBackToWelcome = goBackToWelcome;
+window.vote = vote;
+window.nextMatch = nextMatch;
+window.joinSessionDirect = joinSessionDirect;

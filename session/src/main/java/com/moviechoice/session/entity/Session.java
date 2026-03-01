@@ -30,7 +30,7 @@ public class Session {
     @Column(name = "updated_at")
     private ZonedDateTime updatedAt;
 
-    @Column(name = "current_movie_index", nullable = false)
+    @Column(name = "current_movie_index")
     private Integer currentMovieIndex = 0;
 
     public UUID getId() {

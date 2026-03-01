@@ -20,7 +20,7 @@ public class MovieInitializer {
     public void initializeMovies() {
         log.info("ИНИЦИАЛИЗАЦИЯ ФИЛЬМОВ ПРИ СТАРТЕ ПРИЛОЖЕНИЯ");
         try {
-            votingService.updateMoviesForTmdb();
+            votingService.updateMoviesFromTmdb();
             log.info("ФИЛЬМЫ УСПЕШНО ЗАГРУЖЕНЫ ПРИ СТАРТЕ");
         } catch (Exception e) {
             log.error("Ошибка при инициализации фильмов: ", e);
