@@ -101,7 +101,7 @@ public class VotingService {
     }
     //создаем голос если есть фильм и тд и тп
     @Transactional
-    public Vote createVote(UUID sessionId, UUID participantId, Long movieId, VoteDecision decision){
+    public Vote createVote(UUID sessionId, String participantId, Long movieId, VoteDecision decision){
         Movie movi = movieRepository.findById(movieId).orElseThrow(() -> new RuntimeException("Фильм не найден: " + movieId));
 
         Vote vote = Vote.builder().sessionId(sessionId).participantId(participantId).movie(movi).decision(decision).createdAt(ZonedDateTime.now()).build();

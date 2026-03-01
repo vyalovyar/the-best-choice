@@ -15,5 +15,5 @@ public interface VoteRepository extends JpaRepository<Vote, UUID> {
     List<Vote> findBySessionIdOrderByCreatedAtDesc(UUID sessionId);
 
     //Голос конкретного челика
-    List<Vote> findBySessionIdAndParticipantId(UUID sessionId, UUID participantId);
+    List<Vote> findBySessionIdAndParticipantId(UUID sessionId, String participantId);
 }

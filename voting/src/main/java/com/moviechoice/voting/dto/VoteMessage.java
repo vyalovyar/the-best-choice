@@ -14,7 +14,7 @@ import java.util.UUID;
 public class VoteMessage {
     private UUID voteId;
     private UUID sessionId;
-    private UUID participantId;
+    private String participantId;
     private Long movieId;
     private String movieTitle;
     private VoteDecision decision;

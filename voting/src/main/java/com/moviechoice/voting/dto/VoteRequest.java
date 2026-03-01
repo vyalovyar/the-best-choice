@@ -9,7 +9,7 @@ import java.util.UUID;
 @Data
 public class VoteRequest {
     private UUID sessionId;
-    private UUID participantId;
+    private String participantId;
     private Long movieId;
     private VoteDecision decision;
 }
