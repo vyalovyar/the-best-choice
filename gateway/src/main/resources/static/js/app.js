@@ -1,10 +1,3 @@
-// app.js — полностью готовый файл
-// ==================================================
-// Примечание: этот файл расширяет твою прежнюю логику,
-// сохраняя совместимость с sessionServiceUrl и votingServiceUrl.
-// ==================================================
-
-/* ====== STATE ====== */
 const state = {
     sessionId: null,
     participantId: null,
@@ -63,8 +56,6 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
         )
     ]);
 }
-
-/* ====== UI tab logic ====== */
 function switchTab(tabName) {
     const joinPanel = el('joinPanel');
     const createPanel = el('createPanel');
@@ -89,8 +80,6 @@ function switchTab(tabName) {
         if (node) node.classList.add('hidden');
     });
 }
-
-/* ====== SESSION create / join ====== */
 async function createSession() {
     try {
         const btn = el('createBtn');
@@ -114,14 +103,8 @@ async function createSession() {
         // persist
         localStorage.setItem('participantId', state.participantId);
         localStorage.setItem('sessionId', state.sessionId);
-
-        // show welcome -> waiting
         showWaitingScreen();
-
-        // connect websocket (subscribe to participants/start/votes/match)
         connectWebSocket();
-
-        // also optimistically add self to participants
         state.participants = [{ id: state.participantId, name: 'Вы (хост)' }];
         renderParticipants();
 
@@ -217,21 +200,22 @@ async function fetchSessionInfo(sessionId) {
         state.sessionCode = state.sessionCode || (state.sessionId ? state.sessionId.substring(0,6).toUpperCase() : '—');
     }
 }
-
-/* ====== WEBSOCKET ====== */
 function connectWebSocket() {
     if (!state.sessionId) {
         console.warn('connectWebSocket: no sessionId');
         return;
     }
 
+    console.log(' Connecting to WebSocket:', state.wsUrl);
+    console.log(' Session ID:', state.sessionId);
+
     try {
         const socket = new SockJS(state.wsUrl);
         state.stompClient = Stomp.over(socket);
-        state.stompClient.debug = function() {}; // silence logs
+        state.stompClient.debug = null; // ✅ Отключаем шумные логи SockJS
 
         state.stompClient.connect({}, (frame) => {
-            console.log('WS connected', frame);
+            console.log('✅ WS connected:', frame);
             state.connected = true;
 
             // subscribe to participants updates (backend should broadcast participants list)
@@ -276,15 +260,21 @@ function connectWebSocket() {
 
         }, (err) => {
             console.error('WS connect error', err);
+            if (err && err.message && err.message.includes('301')) {
+                console.error(' Возможно, проблема с редиректом HTTP→HTTPS. Проверь, что Gateway правильно проксирует /ws');
+            }
             state.connected = false;
-            setTimeout(connectWebSocket, 3000);
+            setTimeout(() => {
+                if (state.sessionId) {
+                    console.log('Повторное подключение через 3 сек...');
+                    connectWebSocket();
+                }
+            }, 3000);
         });
     } catch (err) {
         console.error('connectWebSocket exception', err);
     }
 }
-
-/* ====== HANDLERS: participants / start / votes / match ====== */
 function handleParticipantsUpdate(payload) {
     // payload expected: { participants: [{id, name}], newParticipantId: 'p_xxx' }
     if (!payload) return;
@@ -307,7 +297,6 @@ function handleParticipantsUpdate(payload) {
         showToast('Новый участник подключился');
     }
 }
-
 function handleStartMessage(payload) {
     state.votingStarted = true;
     showToast('Выбор начат');
@@ -322,8 +311,6 @@ function handleVoteUpdate(message) {
     const vote = JSON.parse(message.body);
     // vote expected: { sessionId, participantId, movieId, decision }
     if (!vote || !vote.participantId) return;
-
-    // ensure participant in list
     if (!state.participants.some(p => p.id === vote.participantId)) {
         state.participants.push({ id: vote.participantId, name: 'Участник' });
         renderParticipants();
@@ -332,8 +319,6 @@ function handleVoteUpdate(message) {
     // store vote for current movie
     state.participantVotes[vote.participantId] = vote.decision;
     updateParticipantStatusById(vote.participantId, 'voted');
-
-    // If everyone voted -> proceed
     const required = state.participants.length || Math.max(2, Object.keys(state.participantVotes).length);
     if (Object.keys(state.participantVotes).length >= required) {
         // determine if all voted LIKE for match
@@ -366,8 +351,6 @@ function handleMatchMessage(message) {
     // map to our expected format
     showMatchScreen(match);
 }
-
-/* ====== RENDER / UI helpers ====== */
 function renderParticipants() {
     const list = el('participantsList');
     if (!list) return;
@@ -433,8 +416,6 @@ function updateParticipantStatusById(participantId, status) {
         node.classList.remove('voted');
         node.classList.add('wait');
     }
-
-    // also update the summary statusRow on voting screen
     renderStatusRow();
 }
 
@@ -499,8 +480,6 @@ function startVoting() {
         handleStartMessage({});
     }
 }
-
-/* ====== VOTING flow ====== */
 async function initVoting() {
     try {
         // load movies
@@ -581,19 +560,13 @@ function vote(decision) {
         }
     }
 }
-
 function moveToNextMovie() {
     // reset votes
     state.participantVotes = {};
     state.voted = false;
     state.votedDecision = null;
-    // reset participant statuses
     state.participants.forEach(p => updateParticipantStatusById(p.id, 'wait'));
-
-    // advance index
     state.currentMovieIndex = (state.currentMovieIndex + 1) % state.movies.length;
-
-    // inform backend of index change (optional)
     if (state.connected && state.stompClient) {
         try {
             state.stompClient.send('/app/update-movie-index', {}, JSON.stringify({
@@ -697,8 +670,6 @@ function exitSession() {
         } catch (e) { /* ignore */ }
         state.connected = false;
     }
-
-    // clear local state
     state.sessionId = null;
     state.participantId = null;
     state.participants = [];
@@ -713,8 +684,6 @@ function goBackToWelcome() {
     // disconnect, but keep local session? For safety we clear
     exitSession();
 }
-
-/* ====== CONFETTI (CSS rectangles) ====== */
 function playConfetti() {
     const count = 36;
     for (let i = 0; i < count; i++) {
@@ -744,16 +713,12 @@ function playConfetti() {
         setTimeout(() => c.remove(), 2600);
     }
 }
-
-/* ====== INIT on load ====== */
 document.addEventListener('DOMContentLoaded', () => {
     // wire up UI initial text
     const env = el('envInfo');
     if (env) {
         env.textContent = `WebSocket: ${state.wsUrl}, Voting API: ${state.votingServiceUrl}`;
     }
-
-    // load local participant/session if exist
     const savedPid = localStorage.getItem('participantId');
     const savedSid = localStorage.getItem('sessionId');
     if (savedPid && savedSid) {
@@ -762,10 +727,6 @@ document.addEventListener('DOMContentLoaded', () => {
         state.sessionId = savedSid;
         // fetch session code if possible, then go to waiting
         fetchSessionInfo(state.sessionId).then(() => {
-            // join directly only if user expects it
-            // We won't auto-join the WS here to avoid surprising behaviour,
-            // but if URL contains ?session=.. we'll auto join below (checkUrlParams)
-            // showWelcomeScreen();
         }).catch(()=>{});
     }
 
@@ -785,11 +746,6 @@ function checkUrlParams() {
         joinSessionDirect();
     }
 }
-
-/* ====== small helpers for UI events ====== */
-// pasteFromClipboard and copyToClipboard implemented above
-
-// expose some functions to global (used by inline onclick)
 window.switchTab = switchTab;
 window.createSession = createSession;
 window.joinSession = joinSession;
