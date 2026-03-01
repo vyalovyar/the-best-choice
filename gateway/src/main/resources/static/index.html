@@ -649,38 +649,29 @@
 
     <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
-    
-    <!-- Конфигурация backend URL'ов -->
+
     <script>
         (function() {
-            const isLocalhost = window.location.hostname === 'localhost' || 
-                               window.location.hostname === '127.0.0.1';
-            
+            const isLocalhost = window.location.hostname === 'localhost' ||
+                window.location.hostname === '127.0.0.1';
+
             if (isLocalhost) {
-                // Локальная разработка - используем порты
+
                 window.BACKEND_SESSION_URL = 'http://localhost:8081/api/sessions';
                 window.BACKEND_VOTING_URL = 'http://localhost:8082/api/voting';
-                window.BACKEND_WS_URL = 'ws://localhost:8082/ws';
+                window.BACKEND_WS_URL = 'http://localhost:8082/ws';
             } else {
-                // Production - используем поддомены Render.com
+
                 const protocol = window.location.protocol;
-                const wsProtocol = protocol === 'https:' ? 'wss:' : 'ws:';
-                
-                // Замена поддомена: thebestchoice-gateway → thebestchoice-session или thebestchoice-voting
+
                 const host = window.location.host;
-                const sessionHost = host.replace('thebestchoice-gateway', 'thebestchoice-session')
-                                      .replace('gateway', 'session');
                 const votingHost = host.replace('thebestchoice-gateway', 'thebestchoice-voting')
-                                      .replace('gateway', 'voting');
-                
-                window.BACKEND_SESSION_URL = protocol + '//' + sessionHost + '/api/sessions';
-                window.BACKEND_VOTING_URL = protocol + '//' + votingHost + '/api/voting';
-                window.BACKEND_WS_URL = wsProtocol + '//' + votingHost + '/ws';
+                    .replace('gateway', 'voting');
+
+                window.BACKEND_WS_URL = protocol + '//' + votingHost + '/ws';
             }
-            
+
             console.log('Backend Configuration:');
-            console.log('Session URL:', window.BACKEND_SESSION_URL);
-            console.log('Voting URL:', window.BACKEND_VOTING_URL);
             console.log('WebSocket URL:', window.BACKEND_WS_URL);
         })();
     </script>

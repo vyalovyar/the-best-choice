@@ -1,8 +1,8 @@
 // ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
 function getDefaultWsUrl() {
-    const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+    const protocol = window.location.protocol;
     const host = window.location.host;
-    return `${protocol}${host}/ws`;
+    return `${protocol}//${host}/ws`;
 }
 
 // ===== СОСТОЯНИЕ ПРИЛОЖЕНИЯ =====
@@ -27,9 +27,9 @@ const state = {
     connected: false,
 
     // Параметры бэкенда
-    // Используем переменные окружения для конфигурации
-    sessionServiceUrl: window.BACKEND_SESSION_URL || 'http://localhost:8081/api/sessions',
-    votingServiceUrl: window.BACKEND_VOTING_URL || 'http://localhost:8082/api/voting',
+    // На production используем gateway, на локалке - напрямую
+    sessionServiceUrl: window.BACKEND_SESSION_URL || `${window.location.origin}/api/sessions`,
+    votingServiceUrl: window.BACKEND_VOTING_URL || `${window.location.origin}/api/voting`,
     wsUrl: window.BACKEND_WS_URL || getDefaultWsUrl(),
 };
 
@@ -109,137 +109,7 @@ async function createSession() {
     }
 }
 
-// ===== СОЗДАНИЕ ТЕСТОВОЙ СЕССИИ (для одного человека) =====
-async function createTestSession() {
-    console.log('[createTestSession] ▶️ Начало выполнения');
 
-    let btn = null;
-    let originalText = '🧪 Протестировать в одиночку';
-
-    try {
-        // 1. Получаем элемент кнопки
-        btn = event?.currentTarget;
-        console.log('[createTestSession] 🔘 Кнопка:', btn ? {
-            text: btn.textContent,
-            disabled: btn.disabled,
-            id: btn.id
-        } : 'не найдена');
-
-        originalText = btn?.textContent || '🧪 Протестировать в одиночку';
-        console.log('[createTestSession] 💾 Сохранён исходный текст кнопки:', originalText);
-
-        // 2. Блокируем кнопку и меняем текст
-        if (btn) {
-            btn.disabled = true;
-            btn.textContent = 'Создание...';
-            console.log('[createTestSession] 🔒 Кнопка заблокирована, текст изменён на "Создание..."');
-        }
-
-        // 3. Отправляем запрос на создание сессии
-        console.log('[createTestSession] 🌐 Запрос к API:', {
-            url: state.sessionServiceUrl,
-            method: 'POST',
-            timestamp: new Date().toISOString()
-        });
-
-        const response = await fetchWithTimeout(state.sessionServiceUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-        }, 10000);
-
-        console.log('[createTestSession] 📥 Ответ API:', {
-            status: response.status,
-            statusText: response.statusText,
-            ok: response.ok
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text().catch(() => 'Не удалось прочитать тело ответа');
-            console.error('[createTestSession] ❌ Ошибка HTTP:', {
-                status: response.status,
-                body: errorText
-            });
-            throw new Error(`Ошибка создания сессии: ${response.status} ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        console.log('[createTestSession] ✅ Данные сессии получены:', {
-            sessionId: data.sessionId,
-            code: data.code
-        });
-
-        // 4. Обновляем состояние приложения
-        console.log('[createTestSession] 🔄 Обновление state:', {
-            old: {
-                sessionId: state.sessionId,
-                sessionCode: state.sessionCode,
-                participantId: state.participantId
-            },
-            new: {
-                sessionId: data.sessionId,
-                sessionCode: data.code,
-                participantId: 'test-user-' + Date.now()
-            }
-        });
-
-        state.sessionId = data.sessionId;
-        state.sessionCode = data.code;
-        state.participantId = 'test-user-' + Date.now();
-
-        // 5. Сохраняем в localStorage
-        console.log('[createTestSession] 💾 Запись в localStorage:', {
-            participantId: state.participantId,
-            sessionId: state.sessionId
-        });
-
-        localStorage.setItem('participantId', state.participantId);
-        localStorage.setItem('sessionId', state.sessionId);
-        console.log('[createTestSession] ✅ Данные успешно сохранены в localStorage');
-
-        // 6. Инициализация голосования
-        console.log('[createTestSession] 🎬 Вызов initVoting()...');
-        await initVoting();
-        console.log('[createTestSession] ✅ initVoting() завершена успешно');
-
-        // 7. Финальный лог успеха
-        console.log('[createTestSession] 🎉 Тестовая сессия создана успешно:', {
-            sessionId: state.sessionId,
-            sessionCode: state.sessionCode,
-            participantId: state.participantId
-        });
-
-    } catch (error) {
-        // 8. Детальное логирование ошибки
-        console.error('[createTestSession] 💥 Критическая ошибка:', {
-            message: error.message,
-            name: error.name,
-            stack: error.stack,
-            timestamp: new Date().toISOString()
-        });
-
-        // Отображаем ошибку пользователю
-        const errorElement = document.getElementById('createError');
-        if (errorElement) {
-            errorElement.textContent = error.message;
-            errorElement.classList.remove('hidden');
-            console.log('[createTestSession] ⚠️ Ошибка отображена в UI (#createError)');
-        } else {
-            console.warn('[createTestSession] ⚠️ Элемент #createError не найден в DOM');
-        }
-
-        // Восстанавливаем кнопку
-        if (btn) {
-            btn.disabled = false;
-            btn.textContent = originalText;
-            console.log('[createTestSession] 🔓 Кнопка восстановлена:', {
-                text: btn.textContent,
-                disabled: btn.disabled
-            });
-        }
-    } finally {
-        console.log('[createTestSession] 🏁 Выполнение завершено');
-    }
-}
 
 // ===== ПРИСОЕДИНЕНИЕ К СЕССИИ =====
 async function joinSession() {
