@@ -3,12 +3,11 @@ server:
 
 spring:
   datasource:
-    url: ${JDBC_DATABASE_URL:${SPRING_DATASOURCE_URL:}}
-    username: ${DATABASE_USER:${SPRING_DATASOURCE_USERNAME:}}
-    password: ${DATABASE_PASSWORD:${SPRING_DATASOURCE_PASSWORD:}}
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USER}
+    password: ${DATABASE_PASSWORD}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
       ddl-auto: update
     database-platform: org.hibernate.dialect.PostgreSQLDialect
-    properties: {}
