@@ -8,7 +8,7 @@ import java.time.ZonedDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "votes", schema = "schema_voting")
+@Table(name = "votes")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -27,7 +27,7 @@ public class Vote {
     private String participantId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "movi_id", nullable = false)
+    @JoinColumn(name = "movie_id", nullable = false)
     private Movie movie;
 
     @Column(nullable = false)

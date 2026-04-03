@@ -6,7 +6,7 @@ import java.time.ZonedDateTime;
 
 
 @Entity
-@Table(name = "movies", schema = "schema_voting")
+@Table(name = "movies")
 @Getter
 @Setter
 @NoArgsConstructor

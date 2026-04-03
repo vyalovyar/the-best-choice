@@ -17,6 +17,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -67,11 +68,33 @@ public class VotingController {
         //проверяем совпадения голосов
         chekForMath(request.getSessionId(), request.getMovieId());
     }
+    @MessageMapping("/start-voting")
+    public void handleStartVoting(@Payload VoteRequest request) {
+        // Ожидаем, что клиент пришлёт sessionId и participantId в теле запроса
+        log.info("Start voting requested for session={}", request.getSessionId());
+        try {
+            simpMessagingTemplate.convertAndSend(
+                    "/topic/session/" + request.getSessionId() + "/start",
+                    Map.of("sessionId", request.getSessionId(), "by", request.getParticipantId())
+            );
+        } catch (Exception e) {
+            log.warn("Не удалось отправить WS start message: {}", e.getMessage());
+        }
+    }
 
     @MessageMapping("/update-movie-index")
     public void handleUpdateMovieIndex(@Payload UpdateMovieIndexRequest request) {
         log.info("Обновление индекса фильма для сессии={}, индекс={}", request.getSessionId(), request.getMovieIndex());
         votingService.updateMovieIndexInSession(request.getSessionId(), request.getMovieIndex());
+        // уведомляем всех участников сессии об обновлённом индексе, чтобы клиенты синхронизировались
+        try {
+            simpMessagingTemplate.convertAndSend(
+                    "/topic/session/" + request.getSessionId() + "/index",
+                    request
+            );
+        } catch (Exception e) {
+            log.warn("Не удалось отправить WS-уведомление об обновлении индекса: {}", e.getMessage());
+        }
     }
 
     private void chekForMath(UUID sessionId, long movieId) {

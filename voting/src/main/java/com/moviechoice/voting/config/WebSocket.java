@@ -21,7 +21,8 @@ public class WebSocket implements WebSocketMessageBrokerConfigurer {
     public void registerStompEndpoints(StompEndpointRegistry registry) {
 
         registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns("*"); // УБРАЛИ withSockJS()
+            .setAllowedOriginPatterns("*")
+            .withSockJS();
 
     }
 }
