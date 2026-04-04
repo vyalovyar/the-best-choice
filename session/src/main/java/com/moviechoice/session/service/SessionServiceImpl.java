@@ -23,7 +23,7 @@ public class SessionServiceImpl implements SessionService {
     public Session createSession(){
         //генерирую уникальный код с помощью какого-нибудь алгоритма
         String uniqueCode = generateUniqCode();
-        Session session = Session.builder().code(uniqueCode).status(SessionStatus.ACTIVE).createdAt(ZonedDateTime.now()).build();
+        Session session = Session.builder().code(uniqueCode).status(SessionStatus.ACTIVE).createdAt(ZonedDateTime.now()).currentMovieIndex(0).build();
         session.setCreatedAt(ZonedDateTime.now());
 
         return sessionRepository.save(session);
@@ -61,5 +61,4 @@ public class SessionServiceImpl implements SessionService {
         } while (sessionRepository.existsByCode(code));
         return code;
     }
-
 }
