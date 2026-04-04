@@ -2,8 +2,10 @@ package com.moviechoice.session.controller;
 
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.moviechoice.session.entity.Session;
+import com.moviechoice.session.entity.Participant;
 import com.moviechoice.session.service.SessionService;
 
 @RestController
@@ -30,48 +33,53 @@ public class SessionController {
     }
 
     @PostMapping
-    public ResponseEntity<Map<String, String>> createSession(){
+    public ResponseEntity<Map<String, Object>> createSession(){
         //создаем сессию
         Session session = sessionService.createSession();
-        //собираем jsonchik
-        Map<String, String> resp = new HashMap<>();
-        resp.put("sessionId", session.getId().toString());
-        resp.put("code", session.getCode().toString());
-        resp.put("status", session.getStatus().toString());
-        resp.put("currentMovieIndex", session.getCurrentMovieIndex().toString());
-
-        //отправляем ответ и статус
-        return ResponseEntity.ok(resp);
+        //собираем response быстрее
+        return ResponseEntity.ok(buildSessionResponse(session, List.of()));
     }
 
-    //300 раз скажите мне что это кринж, я знаю, добавлю дто и маппер после того, как будет готов mvp
     @GetMapping("/code")
-    public ResponseEntity<Map<String, String>> getSessionCode(@RequestParam String code) {
+    public ResponseEntity<Map<String, Object>> getSessionCode(@RequestParam String code) {
         return sessionService.findByCode(code).
                 map(session -> {
-                    Map<String, String> res = new HashMap<>();
-                    res.put("sessionId", session.getId().toString());
-                    res.put("code", session.getCode().toString());
-                    res.put("status", session.getStatus().toString());
-                    res.put("currentMovieIndex", session.getCurrentMovieIndex().toString());
-                    return ResponseEntity.ok(res);
+                    List<Participant> participants = sessionService.getParticipants(session.getId());
+                    return ResponseEntity.ok(buildSessionResponse(session, participants));
                 })
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/{sessionId}")
-    public ResponseEntity<Map<String, String>> getSessionById(@PathVariable String sessionId) {
+    public ResponseEntity<Map<String, Object>> getSessionById(@PathVariable String sessionId) {
         try {
             UUID uuid = UUID.fromString(sessionId);
             return sessionService.getSessionById(uuid)
                     .map(session -> {
-                        Map<String, String> res = new HashMap<>();
-                        res.put("sessionId", session.getId().toString());
-                        res.put("code", session.getCode().toString());
-                        res.put("status", session.getStatus().toString());
-                        res.put("currentMovieIndex", session.getCurrentMovieIndex().toString());
-                        return ResponseEntity.ok(res);
+                        List<Participant> participants = sessionService.getParticipants(uuid);
+                        return ResponseEntity.ok(buildSessionResponse(session, participants));
                     }).orElse(ResponseEntity.notFound().build());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    @PostMapping("/{sessionId}/join")
+    public ResponseEntity<Map<String, Object>> joinSession(@PathVariable String sessionId, @RequestBody Map<String, String> body) {
+        try {
+            UUID uuid = UUID.fromString(sessionId);
+            String participantName = body.get("name");
+            
+            Participant participant = sessionService.addParticipant(uuid, participantName);
+            if (participant == null) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            Map<String, Object> res = new HashMap<>();
+            res.put("participantId", participant.getId().toString());
+            res.put("name", participant.getName());
+            res.put("joinedAt", participant.getJoinedAt());
+            return ResponseEntity.ok(res);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().build();
         }
@@ -101,4 +109,21 @@ public class SessionController {
         }
     }
 
+    private Map<String, Object> buildSessionResponse(Session session, List<Participant> participants) {
+        Map<String, Object> res = new HashMap<>();
+        res.put("sessionId", session.getId().toString());
+        res.put("code", session.getCode().toString());
+        res.put("status", session.getStatus().toString());
+        res.put("currentMovieIndex", session.getCurrentMovieIndex().toString());
+        res.put("participants", participants.stream()
+                .map(p -> {
+                    Map<String, String> pMap = new HashMap<>();
+                    pMap.put("id", p.getId().toString());
+                    pMap.put("name", p.getName());
+                    pMap.put("joinedAt", p.getJoinedAt().toString());
+                    return pMap;
+                })
+                .collect(Collectors.toList()));
+        return res;
+    }
 }

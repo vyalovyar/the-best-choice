@@ -4,19 +4,25 @@ package com.moviechoice.session.service;
 import java.time.ZonedDateTime;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.List;
 
 import org.springframework.stereotype.Service;
 
 import com.moviechoice.session.entity.Session;
 import com.moviechoice.session.entity.SessionStatus;
+import com.moviechoice.session.entity.Participant;
 import com.moviechoice.session.repository.SessionRepository;
+import com.moviechoice.session.repository.ParticipantRepository;
 
 @Service
 public class SessionServiceImpl implements SessionService {
 
     private final SessionRepository sessionRepository;
-    public SessionServiceImpl(SessionRepository sessionRepository) {
+    private final ParticipantRepository participantRepository;
+
+    public SessionServiceImpl(SessionRepository sessionRepository, ParticipantRepository participantRepository) {
         this.sessionRepository = sessionRepository;
+        this.participantRepository = participantRepository;
     }
 
     //Метод для создания сессии
@@ -43,22 +49,32 @@ public class SessionServiceImpl implements SessionService {
         return sessionRepository.save(session);
     }
 
-    //Генерерация случайного кода
-    //Сделать генерацию поинтересней, типо movi-{код}
+    //Генерерация случайного кода 
     public String generateUniqCode(){
-        String code;
-        String characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        // Генерируем код с использованием UUID для гарантированной уникальности и скорости
+        String uuid = UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+        return uuid;
+    }
 
-        //Ура, мне впервые в жизни пригодился do while :)
-        do{
-            StringBuilder sb= new StringBuilder(10);
-            for (int i = 0; i < 6; i++) {
-                int index = (int) (Math.random() * characters.length());
-                sb.append(characters.charAt(index));
-            }
-            code = sb.toString();
+    @Override
+    public Participant addParticipant(UUID sessionId, String participantName) {
+        return getSessionById(sessionId).map(session -> {
+            Participant participant = Participant.builder()
+                    .session(session)
+                    .name(participantName)
+                    .joinedAt(ZonedDateTime.now())
+                    .build();
+            return participantRepository.save(participant);
+        }).orElse(null);
+    }
 
-        } while (sessionRepository.existsByCode(code));
-        return code;
+    @Override
+    public List<Participant> getParticipants(UUID sessionId) {
+        return participantRepository.findBySessionId(sessionId);
+    }
+
+    @Override
+    public void removeParticipant(UUID participantId) {
+        participantRepository.deleteById(participantId);
     }
 }

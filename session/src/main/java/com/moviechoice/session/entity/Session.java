@@ -2,6 +2,7 @@ package com.moviechoice.session.entity;
 
 import java.time.ZonedDateTime;
 import java.util.UUID;
+import java.util.List;
 import lombok.*;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -10,6 +11,9 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.FetchType;
 
 
 @Getter
@@ -22,7 +26,6 @@ public class Session {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
-//для приписки увеличил размер
     @Column(name = "code", unique = true, nullable = false, length = 20)
     private String code;
 
@@ -38,5 +41,8 @@ public class Session {
 
     @Column(name = "current_movie_index")
     private Integer currentMovieIndex = 0;
+
+    @OneToMany(mappedBy = "session", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<Participant> participants;
 
 }

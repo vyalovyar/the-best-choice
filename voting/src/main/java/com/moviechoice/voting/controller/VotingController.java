@@ -5,6 +5,7 @@ import com.moviechoice.voting.dto.MatchMessage;
 import com.moviechoice.voting.dto.UpdateMovieIndexRequest;
 import com.moviechoice.voting.dto.VoteMessage;
 import com.moviechoice.voting.dto.VoteRequest;
+import com.moviechoice.voting.dto.StartVotingRequest;
 import com.moviechoice.voting.entity.Movie;
 import com.moviechoice.voting.entity.Vote;
 import com.moviechoice.voting.entity.VoteDecision;
@@ -69,16 +70,16 @@ public class VotingController {
         chekForMath(request.getSessionId(), request.getMovieId());
     }
     @MessageMapping("/start-voting")
-    public void handleStartVoting(@Payload VoteRequest request) {
-        // Ожидаем, что клиент пришлёт sessionId и participantId в теле запроса
-        log.info("Start voting requested for session={}", request.getSessionId());
+    public void handleStartVoting(@Payload StartVotingRequest request) {
+        log.info("Start voting requested for session={}, by={}", request.getSessionId(), request.getBy());
         try {
             simpMessagingTemplate.convertAndSend(
                     "/topic/session/" + request.getSessionId() + "/start",
-                    Map.of("sessionId", request.getSessionId(), "by", request.getParticipantId())
+                    Map.of("sessionId", request.getSessionId(), "by", request.getBy())
             );
+            log.info("Start voting message sent successfully");
         } catch (Exception e) {
-            log.warn("Не удалось отправить WS start message: {}", e.getMessage());
+            log.warn("Не удалось отправить WS start message: {}", e.getMessage(), e);
         }
     }
 

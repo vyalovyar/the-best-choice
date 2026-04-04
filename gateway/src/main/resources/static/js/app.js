@@ -1,4 +1,4 @@
-// ====== STATE ======
+
 const state = {
     sessionId: null,
     participantId: null,
@@ -18,7 +18,6 @@ const state = {
     wsUrl: window.BACKEND_WS_URL || getDefaultWsUrl(),
 };
 
-// ====== HELPERS ======
 function getDefaultWsUrl() {
     const proto = window.location.protocol;
     const host = window.location.host;
@@ -52,7 +51,6 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
     ]);
 }
 
-// ====== TABS ======
 function switchTab(tabName) {
     const joinPanel = el('joinPanel');
     const createPanel = el('createPanel');
@@ -76,7 +74,6 @@ function switchTab(tabName) {
     });
 }
 
-// ====== CREATE / JOIN ======
 async function createSession() {
     try {
         const btn = el('createBtn');
@@ -97,6 +94,9 @@ async function createSession() {
 
         localStorage.setItem('participantId', state.participantId);
         localStorage.setItem('sessionId', state.sessionId);
+
+    
+        await joinSessionAsParticipant('Хост');
 
         showWaitingScreen();
         connectWebSocket();
@@ -152,6 +152,9 @@ async function joinSessionDirect() {
         state.isHost = false;
         localStorage.setItem('participantId', state.participantId);
         localStorage.setItem('sessionId', state.sessionId);
+        
+        await joinSessionAsParticipant('Участник');
+        
         showWaitingScreen();
         connectWebSocket();
     } catch (err) {
@@ -161,14 +164,74 @@ async function joinSessionDirect() {
     }
 }
 
-// ====== WEBSOCKET ======
+async function joinSessionAsParticipant(name = 'Участник') {
+    try {
+        const response = await fetchWithTimeout(
+            `${state.sessionServiceUrl}/${state.sessionId}/join`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            },
+            10000
+        );
+
+        if (!response.ok) throw new Error(`Ошибка присоединения (${response.status})`);
+        
+        const data = await response.json();
+        console.log('Participant joined:', data);
+        showToast(`${name} присоединился к сессии`);
+    } catch (err) {
+        console.warn('joinSessionAsParticipant error:', err);
+    }
+}
+
+async function loadParticipants() {
+    try {
+        const response = await fetchWithTimeout(
+            `${state.sessionServiceUrl}/${state.sessionId}`,
+            { method: 'GET' },
+            10000
+        );
+
+        if (!response.ok) throw new Error(`Ошибка загрузки участников (${response.status})`);
+        
+        const data = await response.json();
+        state.participants = data.participants || [];
+        console.log('Participants loaded:', state.participants);
+        
+        updateParticipantsList();
+    } catch (err) {
+        console.warn('loadParticipants error:', err);
+    }
+}
+
+function updateParticipantsList() {
+    const listEl = el('participantsList');
+    if (!listEl) return;
+    
+    listEl.innerHTML = '';
+    if (!state.participants || state.participants.length === 0) {
+        listEl.innerHTML = '<p style="color: #999; text-align: center;">Участники не найдены</p>';
+        return;
+    }
+    
+    const html = state.participants.map(p => 
+        `<div style="padding: 8px; background: #f0f0f0; margin: 4px 0; border-radius: 4px;">
+             ${p.name} <span style="color: #999; font-size: 0.9em;">(${new Date(p.joinedAt).toLocaleTimeString()})</span>
+        </div>`
+    ).join('');
+    
+    listEl.innerHTML = html;
+}
+
 function connectWebSocket() {
     if (!state.sessionId) {
         console.warn('connectWebSocket: no sessionId');
         return;
     }
 
-    console.log('🔌 Connecting to WS:', state.wsUrl, 'Session:', state.sessionId);
+    console.log('Connecting to WS:', state.wsUrl, 'Session:', state.sessionId);
 
     try {
         const socket = new SockJS(state.wsUrl);
@@ -176,32 +239,33 @@ function connectWebSocket() {
         state.stompClient.debug = () => {};
 
         state.stompClient.connect({}, (frame) => {
-            console.log('✅ WS connected:', frame);
+            console.log(' WS connected:', frame);
             state.connected = true;
 
-            // Подписка на старт голосования
+            loadParticipants();
+
             state.stompClient.subscribe(`/topic/session/${state.sessionId}/start`, (msg) => {
-                console.log('🎬 Start message received');
+                console.log('Start message received');
                 handleStartMessage(msg);
             });
 
-            // Подписка на голоса
+
             state.stompClient.subscribe(`/topic/session/${state.sessionId}/votes`, (msg) => {
-                console.log('🗳️ Vote received');
+                console.log('Vote received');
                 handleVoteUpdate(msg);
             });
 
-            // Подписка на совпадения
+            
             state.stompClient.subscribe(`/topic/session/${state.sessionId}/match`, (msg) => {
-                console.log('🎉 Match received');
+                console.log('Match received');
                 handleMatchMessage(msg);
             });
 
-            // Подписка на обновление индекса текущего фильма (синхронизация между участниками)
+        
             state.stompClient.subscribe(`/topic/session/${state.sessionId}/index`, (msg) => {
                 try {
                     const payload = JSON.parse(msg.body);
-                    console.log('🔁 Received index update', payload);
+                    console.log('Received index update', payload);
                     if (payload && typeof payload.movieIndex === 'number') {
                         state.currentMovieIndex = payload.movieIndex;
                         loadCurrentMovie();
@@ -211,8 +275,19 @@ function connectWebSocket() {
                 }
             });
 
+            
+            state.stompClient.subscribe(`/topic/session/${state.sessionId}/participants`, (msg) => {
+                try {
+                    const payload = JSON.parse(msg.body);
+                    console.log('Participants update', payload);
+                    loadParticipants();
+                } catch (e) {
+                    console.warn('participants subscription parse error', e);
+                }
+            });
+
         }, (err) => {
-            console.error('❌ WS connect error:', err);
+            console.error('WS connect error:', err);
             state.connected = false;
             setTimeout(() => {
                 if (state.sessionId) connectWebSocket();
@@ -223,9 +298,8 @@ function connectWebSocket() {
     }
 }
 
-// ====== HANDLERS ======
 function handleStartMessage(payload) {
-    console.log('🎬 handleStartMessage called');
+    console.log('handleStartMessage called');
     state.votingStarted = true;
     showToast('Голосование начато!');
     initVoting().catch(err => {
@@ -237,11 +311,10 @@ function handleStartMessage(payload) {
 function handleVoteUpdate(message) {
     try {
         const vote = JSON.parse(message.body);
-        console.log('🗳️ Vote:', vote);
+        console.log(' Vote:', vote);
 
         if (!vote || !vote.participantId) return;
 
-        // Простая логика: если оба проголосовали LIKE - показываем совпадение
         state.participantVotes = state.participantVotes || {};
         state.participantVotes[vote.participantId] = vote.decision;
 
@@ -268,9 +341,8 @@ function handleMatchMessage(message) {
     }
 }
 
-// ====== VOTING ======
 function startVoting() {
-    console.log('🎬 startVoting called, isHost:', state.isHost, 'connected:', state.connected);
+    console.log('startVoting called, isHost:', state.isHost, 'connected:', state.connected);
 
     if (!state.isHost) {
         showToast('Только хост может начать голосование');
@@ -283,9 +355,10 @@ function startVoting() {
                 sessionId: state.sessionId,
                 by: state.participantId
             }));
-            console.log('📤 Sent start-voting message');
+            console.log('Sent start-voting message with correct format');
         } catch (e) {
-            console.warn('startVoting send failed, fallback to local', e);
+            console.warn('startVoting send failed, error:', e);
+            console.warn('Fallback to local start');
             handleStartMessage({});
         }
     } else {
@@ -296,13 +369,13 @@ function startVoting() {
 
 async function initVoting() {
     try {
-        console.log('🍿 initVoting: loading movies...');
+        console.log('initVoting: loading movies...');
 
         const resp = await fetch(`${state.votingServiceUrl}/movies`);
         if (!resp.ok) throw new Error(`Ошибка загрузки фильмов (${resp.status})`);
 
         state.movies = await resp.json();
-        console.log('✅ Movies loaded:', state.movies.length);
+        console.log('Movies loaded:', state.movies.length);
 
         if (!Array.isArray(state.movies) || state.movies.length === 0) {
             throw new Error('Нет доступных фильмов');
@@ -330,63 +403,59 @@ async function initVoting() {
 }
 
 function vote(decision) {
-    // 🔧 DEBUG: Логируем каждый шаг
-    console.log('🗳️ vote() called:', { decision, voted: state.voted, votingStarted: state.votingStarted });
+    console.log('vote() called:', { decision, voted: state.voted, votingStarted: state.votingStarted });
 
     if (state.voted) {
-        console.warn('⚠️ Already voted for this movie');
+        console.warn(' Already voted for this movie');
         return;
     }
     if (!state.votingStarted) {
-        console.error('❌ votingStarted is false — did you click "Начать выбор"?');
+        console.error('votingStarted is false — did you click "Начать выбор"?');
         showToast('Сначала нажмите "Начать выбор"');
         return;
     }
 
     const movie = state.movies[state.currentMovieIndex];
     if (!movie) {
-        console.error('❌ No movie at index', state.currentMovieIndex);
+        console.error('No movie at index', state.currentMovieIndex);
         return;
     }
 
-    console.log('✅ Voting for movie:', movie.title);
+    console.log('Voting for movie:', movie.title);
 
-    // Обновляем состояние
+
     state.voted = true;
     state.votedDecision = decision;
     state.participantVotes[state.participantId] = decision;
 
-    // Обновляем UI
+
     el('yesBtn').disabled = true;
     el('noBtn').disabled = true;
     updateParticipantStatusById(state.participantId, 'voted');
     renderStatusRow();
 
-    // 🔧 DEBUG: Проверка логики "все проголосовали"
     const votesCount = Object.keys(state.participantVotes).length;
     const participantsCount = state.participants?.length || 1;
-    console.log('📊 Votes check:', { votesCount, participantsCount, allVotes: state.participantVotes });
+    console.log('Votes check:', { votesCount, participantsCount, allVotes: state.participantVotes });
 
-    // Локальная проверка (для одного игрока)
     if (votesCount >= Math.max(1, participantsCount)) {
         const allLike = Object.values(state.participantVotes).every(v => v === 'LIKE');
-        console.log('🎯 All voted, allLike:', allLike);
+        console.log('All voted, allLike:', allLike);
 
         if (allLike) {
-            console.log('🎉 Showing match screen');
+            console.log('Showing match screen');
             setTimeout(() => showMatchScreen({
                 movieTitle: movie.title,
                 posterPath: movie.posterPath
             }), 400);
         } else {
-            console.log('➡️ Moving to next movie');
+            console.log('Moving to next movie');
             setTimeout(() => moveToNextMovie(), 400);
         }
     }
 
-    // Отправка на сервер
     if (state.connected && state.stompClient) {
-        console.log('📤 Sending vote to server');
+        console.log('Sending vote to server');
         try {
             state.stompClient.send('/app/vote', {}, JSON.stringify({
                 sessionId: state.sessionId,
@@ -395,21 +464,20 @@ function vote(decision) {
                 decision: decision
             }));
         } catch (e) {
-            console.error('❌ Failed to send vote:', e);
+            console.error('Failed to send vote:', e);
         }
     } else {
-        console.warn('⚠️ WebSocket not connected, vote not sent to server');
+        console.warn(' WebSocket not connected, vote not sent to server');
     }
 }
 
 function checkAllVotedAndProceed(movie) {
-    const required = state.participants.length || 2; // минимум 2, но если один — то 1
+    const required = state.participants.length || 2; 
     const votedCount = Object.keys(state.participantVotes).length;
 
     if (votedCount >= required) {
         const votes = Object.values(state.participantVotes);
 
-        // Если все проголосовали LIKE — показываем совпадение
         if (votes.length > 0 && votes.every(v => v === 'LIKE')) {
             setTimeout(() => {
                 showMatchScreen({
@@ -431,14 +499,13 @@ function moveToNextMovie() {
     state.votedDecision = null;
     state.currentMovieIndex = (state.currentMovieIndex + 1) % state.movies.length;
     loadCurrentMovie();
-    // отправляем на сервер обновлённый индекс, чтобы все клиенты синхронизировались
     if (state.connected && state.stompClient) {
         try {
             state.stompClient.send('/app/update-movie-index', {}, JSON.stringify({
                 sessionId: state.sessionId,
                 movieIndex: state.currentMovieIndex
             }));
-            console.log('📤 Sent update-movie-index', state.currentMovieIndex);
+            console.log('Sent update-movie-index', state.currentMovieIndex);
         } catch (e) {
             console.warn('Failed to send update-movie-index', e);
         }
@@ -471,7 +538,7 @@ function loadCurrentMovie() {
 // ====== MATCH ======
 function showMatchScreen(match) {
     hideAllScreens();
-    el('matchTitle').textContent = 'Совпадение 🎉';
+    el('matchTitle').textContent = 'Совпадение';
     el('matchMovieTitle').textContent = match.movieTitle || 'Фильм';
 
     const url = match.posterPath
@@ -494,7 +561,6 @@ function nextMatch() {
     loadCurrentMovie();
 }
 
-// ====== NAVIGATION ======
 function hideAllScreens() {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
 }
@@ -517,7 +583,6 @@ function showVotingScreen() {
     el('votingScreen').classList.add('active');
 }
 
-// ====== UTILS ======
 function copyToClipboard(btn) {
     const link = el('inviteLink').value;
     const button = btn || document.getElementById('copyInviteBtn') || document.activeElement;
@@ -591,7 +656,6 @@ function playConfetti() {
     }
 }
 
-// ====== INIT ======
 document.addEventListener('DOMContentLoaded', () => {
     const savedPid = localStorage.getItem('participantId');
     const savedSid = localStorage.getItem('sessionId');
@@ -628,7 +692,6 @@ function renderStatusRow() {
     });
 }
 
-// ====== EXPORTS ======
 window.switchTab = switchTab;
 window.createSession = createSession;
 window.joinSession = joinSession;
