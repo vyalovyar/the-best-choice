@@ -79,12 +79,17 @@ async function createSession() {
         const btn = el('createBtn');
         if (btn) { btn.disabled = true; btn.textContent = 'Создание...'; }
 
+        console.log('Creating session at:', state.sessionServiceUrl);
+
         const response = await fetchWithTimeout(state.sessionServiceUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
         }, 15000);
 
-        if (!response.ok) throw new Error(`Ошибка создания сессии (${response.status})`);
+        if (!response.ok) {
+            const errmsg = await response.text().catch(() => '');
+            throw new Error(`Ошибка сервера (${response.status}): ${errmsg || response.statusText}`);
+        }
 
         const data = await response.json();
         state.sessionId = data.sessionId || data.id || null;
@@ -95,7 +100,7 @@ async function createSession() {
         localStorage.setItem('participantId', state.participantId);
         localStorage.setItem('sessionId', state.sessionId);
 
-    
+        console.log('Session created:', state.sessionId);
         await joinSessionAsParticipant('Хост');
 
         showWaitingScreen();
@@ -104,8 +109,14 @@ async function createSession() {
         if (btn) { btn.textContent = 'Создать сессию'; btn.disabled = false; }
     } catch (err) {
         console.error('createSession err', err);
+        let errMsg = err.message;
+        if (err.message.includes('истёк')) {
+            errMsg = 'Сервер не отвечает. Проверьте подключение и свежесть развёртывания на Render.';
+        } else if (err.message.includes('Failed to fetch')) {
+            errMsg = 'CORS ошибка или сервис недоступен. Проверьте, запущен ли session-сервис на Render.';
+        }
         const node = el('createError');
-        if (node) { node.textContent = err.message || 'Не удалось создать сессию'; node.classList.remove('hidden'); }
+        if (node) { node.textContent = errMsg; node.classList.remove('hidden'); }
         const btn = el('createBtn');
         if (btn) { btn.disabled = false; btn.textContent = 'Создать сессию'; }
     }
