@@ -75,85 +75,102 @@ function switchTab(tabName) {
 }
 
 async function createSession() {
-    try {
-        const btn = el('createBtn');
-        if (btn) { btn.disabled = true; btn.textContent = 'Создание...'; }
+    if (state.isCreating) return;
 
+    const btn = document.getElementById('createBtn');
+    const err = document.getElementById('createError');
+
+    state.isCreating = true;
+    btn.disabled = true;
+    btn.textContent = 'Создание';
+
+    try {
         console.log('Creating session at:', state.sessionServiceUrl);
 
-        const response = await fetchWithTimeout(state.sessionServiceUrl, {
+        const response = await fetch(state.sessionServiceUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-        }, 15000);
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
 
         if (!response.ok) {
-            const errmsg = await response.text().catch(() => '');
-            throw new Error(`Ошибка сервера (${response.status}): ${errmsg || response.statusText}`);
+            throw new Error(`HTTP ${response.status}`);
         }
 
         const data = await response.json();
-        state.sessionId = data.sessionId || data.id || null;
-        state.sessionCode = data.code || (state.sessionId ? state.sessionId.substring(0,6).toUpperCase() : '—');
-        state.isHost = true;
-        state.participantId = generateParticipantId();
 
-        localStorage.setItem('participantId', state.participantId);
-        localStorage.setItem('sessionId', state.sessionId);
+        console.log('Session created:', data);
 
-        console.log('Session created:', state.sessionId);
-        await joinSessionAsParticipant('Хост');
+        state.sessionId = data.sessionId;
+        state.sessionCode = data.code;
 
         showWaitingScreen();
         connectWebSocket();
 
-        if (btn) { btn.textContent = 'Создать сессию'; btn.disabled = false; }
-    } catch (err) {
-        console.error('createSession err', err);
-        let errMsg = err.message;
-        if (err.message.includes('истёк')) {
-            errMsg = 'Сервер не отвечает. Проверьте подключение и свежесть развёртывания на Render.';
-        } else if (err.message.includes('Failed to fetch')) {
-            errMsg = 'CORS ошибка или сервис недоступен. Проверьте, запущен ли session-сервис на Render.';
-        }
-        const node = el('createError');
-        if (node) { node.textContent = errMsg; node.classList.remove('hidden'); }
-        const btn = el('createBtn');
-        if (btn) { btn.disabled = false; btn.textContent = 'Создать сессию'; }
+        showToast("Сессия создана");
+
+    } catch (error) {
+        console.error('Create session error:', error);
+
+        err.textContent = "Не удалось создать сессию";
+        err.classList.remove("hidden");
+
+    } finally {
+        state.isCreating = false;
+        btn.disabled = false;
+        btn.textContent = 'Создать сессию';
     }
 }
 
 async function joinSession() {
-    try {
-        const link = el('sessionLink').value.trim();
-        if (!link) throw new Error('Введите ссылку сессии');
 
-        let sessionId;
-        try {
-            const u = new URL(link);
-            sessionId = u.searchParams.get('session') || u.searchParams.get('id');
-            if (!sessionId) {
-                const seg = u.pathname.split('/').filter(Boolean).pop();
-                sessionId = seg;
-            }
-        } catch (e) {
-            throw new Error('Неверный формат ссылки');
+    const input = document.getElementById("sessionLink");
+    const err = document.getElementById("joinError");
+
+    const link = input.value.trim();
+
+    if (!link) {
+        err.textContent = "Вставьте ссылку сессии";
+        err.classList.remove("hidden");
+        return;
+    }
+
+    try {
+
+        const url = new URL(link);
+        const sessionCode = url.searchParams.get("session");
+
+        if (!sessionCode) {
+            throw new Error("Invalid link");
         }
 
-        if (!sessionId) throw new Error('Не найден sessionId в ссылке');
+        console.log("Joining session:", sessionCode);
 
-        state.sessionId = sessionId;
-        state.participantId = generateParticipantId();
-        state.isHost = false;
+        const response = await fetch(`${state.sessionServiceUrl}/${sessionCode}`);
 
-        localStorage.setItem('participantId', state.participantId);
-        localStorage.setItem('sessionId', state.sessionId);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        console.log("Session data:", data);
+
+        state.sessionId = data.sessionId;
+        state.sessionCode = data.code;
 
         showWaitingScreen();
         connectWebSocket();
-    } catch (err) {
-        console.error('joinSession err', err);
-        const node = el('joinError');
-        if (node) { node.textContent = err.message || 'Не удалось присоединиться'; node.classList.remove('hidden'); }
+
+        showToast("Вы подключились к сессии");
+
+    } catch (error) {
+
+        console.error("Join error:", error);
+
+        err.textContent = "Не удалось подключиться";
+        err.classList.remove("hidden");
     }
 }
 
