@@ -212,15 +212,17 @@ function updateParticipantsList() {
     
     listEl.innerHTML = '';
     if (!state.participants || state.participants.length === 0) {
-        listEl.innerHTML = '<p style="color: #999; text-align: center;">Участники не найдены</p>';
+        listEl.innerHTML = '<p style="color: #999; text-align: center; margin: 0;">Участники загружаются...</p>';
         return;
     }
     
-    const html = state.participants.map(p => 
-        `<div style="padding: 8px; background: #f0f0f0; margin: 4px 0; border-radius: 4px;">
-             ${p.name} <span style="color: #999; font-size: 0.9em;">(${new Date(p.joinedAt).toLocaleTimeString()})</span>
-        </div>`
-    ).join('');
+    const html = state.participants.map(p => {
+        const time = new Date(p.joinedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+        const isMe = p.id === state.participantId ? ' ★' : '';
+        return `<div style="padding: 8px 0; color: #ddd; font-size: 0.95em; border-bottom: 1px solid rgba(255,255,255,0.05);">
+            ${p.name}${isMe} <span style="color: #666; font-size: 0.85em;">@ ${time}</span>
+        </div>`;
+    }).join('');
     
     listEl.innerHTML = html;
 }
@@ -311,7 +313,7 @@ function handleStartMessage(payload) {
 function handleVoteUpdate(message) {
     try {
         const vote = JSON.parse(message.body);
-        console.log(' Vote:', vote);
+        console.log('Vote:', vote);
 
         if (!vote || !vote.participantId) return;
 
@@ -319,13 +321,24 @@ function handleVoteUpdate(message) {
         state.participantVotes[vote.participantId] = vote.decision;
 
         const votes = Object.values(state.participantVotes);
-        if (votes.length >= 2 && votes.every(v => v === 'LIKE')) {
-            const movie = state.movies[state.currentMovieIndex];
-            setTimeout(() => {
-                showMatchScreen({ movieTitle: movie?.title || 'Фильм', posterPath: movie?.posterPath });
-            }, 800);
-        } else if (votes.length >= 2) {
-            setTimeout(() => moveToNextMovie(), 800);
+        console.log('Votes count:', votes.length, 'Expected:', state.participants?.length || 2);
+        
+        // Проверяем, все ли проголосовали
+        const allVoted = votes.length >= (state.participants?.length || 2);
+        
+        if (allVoted) {
+            if (votes.every(v => v === 'LIKE')) {
+                // Все голосуют LIKE - покажи match
+                console.log('Consensus: all voted LIKE');
+                const movie = state.movies[state.currentMovieIndex];
+                setTimeout(() => {
+                    showMatchScreen({ movieTitle: movie?.title || 'Фильм', posterPath: movie?.posterPath });
+                }, 800);
+            } else {
+                // Разные голоса - переключись на следующий фильм
+                console.log('Disagreement: switching to next movie');
+                setTimeout(() => moveToNextMovie(), 800);
+            }
         }
     } catch (e) {
         console.warn('handleVoteUpdate parse error', e);
@@ -406,7 +419,7 @@ function vote(decision) {
     console.log('vote() called:', { decision, voted: state.voted, votingStarted: state.votingStarted });
 
     if (state.voted) {
-        console.warn(' Already voted for this movie');
+        console.warn('Already voted for this movie');
         return;
     }
     if (!state.votingStarted) {
@@ -423,15 +436,12 @@ function vote(decision) {
 
     console.log('Voting for movie:', movie.title);
 
-
     state.voted = true;
     state.votedDecision = decision;
     state.participantVotes[state.participantId] = decision;
 
-
     el('yesBtn').disabled = true;
     el('noBtn').disabled = true;
-    updateParticipantStatusById(state.participantId, 'voted');
     renderStatusRow();
 
     const votesCount = Object.keys(state.participantVotes).length;
@@ -467,7 +477,7 @@ function vote(decision) {
             console.error('Failed to send vote:', e);
         }
     } else {
-        console.warn(' WebSocket not connected, vote not sent to server');
+        console.warn('WebSocket not connected, vote not sent to server');
     }
 }
 
@@ -494,10 +504,16 @@ function checkAllVotedAndProceed(movie) {
 }
 
 function moveToNextMovie() {
+    console.log('moveToNextMovie: resetting votes and moving to next');
     state.participantVotes = {};
     state.voted = false;
     state.votedDecision = null;
     state.currentMovieIndex = (state.currentMovieIndex + 1) % state.movies.length;
+    
+    // Enable buttons for next voting
+    el('yesBtn').disabled = false;
+    el('noBtn').disabled = false;
+    
     loadCurrentMovie();
     if (state.connected && state.stompClient) {
         try {
@@ -573,8 +589,8 @@ function showWelcomeScreen() {
 function showWaitingScreen() {
     hideAllScreens();
     el('inviteLink').value = `${window.location.origin}/?session=${state.sessionId}`;
-    el('waitingCodeText').textContent = state.sessionCode || '—';
     el('waitingScreen').classList.add('active');
+    loadParticipants();
 }
 
 function showVotingScreen() {

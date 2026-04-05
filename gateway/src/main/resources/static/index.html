@@ -148,6 +148,10 @@
         @media (max-width: 920px) {
             .welcome-inner, .waiting-grid { grid-template-columns: 1fr; }
             .poster { width:100%; height:420px; }
+            .session-code { flex-wrap: wrap; gap: 10px; }
+            #copyInviteBtn { margin-left: 0 !important; width: 100%; }
+            .voting-wrap { flex-direction: column; }
+            .poster { width: 100%; }
         }
     </style>
 </head>
@@ -187,12 +191,8 @@
             </div>
             <div>
                 <div class="panel">
-                    <h3>Как это работает</h3>
+                    <h3>Инструкция</h3>
                     <p class="muted">1) Создайте сессию → 2) Поделитесь ссылкой → 3) Начните голосование → 4) Выбирайте фильмы вместе!</p>
-                    <div style="margin-top:12px;">
-                        <label>Окружение:</label>
-                        <div class="muted" id="envInfo">Загрузка...</div>
-                    </div>
                 </div>
             </div>
         </div>
@@ -201,18 +201,15 @@
     <!-- WAITING SCREEN -->
     <div id="waitingScreen" class="screen dark-card">
         <h2>Комната ожидания</h2>
+        <div class="session-code" style="margin-bottom: 14px;">
+            Поделитесь ссылкой:
+            <button id="copyInviteBtn" class="btn btn-ghost" style="margin-left: auto;" onclick="copyToClipboard(this)">📋 Копировать ссылку</button>
+        </div>
+        <div style="margin-bottom: 14px;">
+            <input id="inviteLink" type="text" readonly style="width: 100%;" />
+        </div>
         <div class="waiting-grid">
             <div>
-                <div class="session-code">
-                    Код сессии: <strong id="waitingCodeText">—</strong>
-                    <button id="copyInviteBtn" class="btn btn-ghost" style="margin-left:12px;" onclick="copyToClipboard(this)">Копировать</button>
-                </div>
-                <div style="margin-top:14px;">
-                    <div class="muted">Поделитесь ссылкой:</div>
-                    <div style="margin-top:12px;">
-                        <input id="inviteLink" type="text" readonly />
-                    </div>
-                </div>
                 <div style="margin-top:14px;">
                     <div class="muted">Участники комнаты:</div>
                     <div id="participantsList" style="margin-top:12px; background: rgba(255,255,255,0.02); border-radius: 10px; padding: 12px; border: 1px solid rgba(255,255,255,0.02); min-height: 80px;"></div>
@@ -253,6 +250,7 @@
                     <button id="noBtn" class="vote-btn dislike" onclick="vote('DISLIKE')">👎 Нет</button>
                 </div>
                 <div id="votingNotice" class="muted" style="margin-top:8px;">Голосование активно</div>
+                <div id="statusRow" style="margin-top:12px; font-size:0.9em; color:#999;"></div>
                 <div style="margin-top:16px;">
                     <button class="btn btn-ghost" onclick="exitSession()">Выйти</button>
                 </div>
