@@ -12,6 +12,9 @@ spring:
       ddl-auto: update
     database-platform: org.hibernate.dialect.PostgreSQLDialect
 
+movies:
+  preload-on-startup: ${MOVIES_PRELOAD_ON_STARTUP:false}
+
 tmdb:
   api-key: ${TMDB_API_KEY}
   base-url: https://api.themoviedb.org/3

@@ -2,7 +2,6 @@ package com.moviechoice.voting.controller;
 
 
 import com.moviechoice.voting.dto.MatchMessage;
-import java.util.LinkedHashMap;
 import com.moviechoice.voting.dto.UpdateMovieIndexRequest;
 import com.moviechoice.voting.dto.VoteMessage;
 import com.moviechoice.voting.dto.VoteRequest;
@@ -19,7 +18,6 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -74,15 +72,9 @@ public class VotingController {
     public void handleStartVoting(@Payload StartVotingRequest request) {
         log.info("Start voting requested for session={}, by={}", request.getSessionId(), request.getBy());
         try {
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("sessionId", request.getSessionId());
-            if (request.getBy() != null) {
-                payload.put("by", request.getBy());
-            }
-
             simpMessagingTemplate.convertAndSend(
                     "/topic/session/" + request.getSessionId() + "/start",
-                    payload
+                    "START"
             );
             log.info("Start voting message sent successfully");
         } catch (Exception e) {

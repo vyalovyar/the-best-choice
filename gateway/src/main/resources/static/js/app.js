@@ -117,7 +117,7 @@ function startParticipantsPolling() {
         if (state.sessionId) {
             loadParticipants();
         }
-    }, 5000);
+    }, 2000);
 }
 
 function stopParticipantsPolling() {
