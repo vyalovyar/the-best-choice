@@ -17,6 +17,7 @@ const state = {
     sessionServiceUrl: window.BACKEND_SESSION_URL || `${window.location.origin}/api/sessions`,
     votingServiceUrl: window.BACKEND_VOTING_URL || `${window.location.origin}/api/voting`,
     wsUrl: window.BACKEND_WS_URL || getDefaultWsUrl(),
+    warmupPromise: null,
 };
 
 function getDefaultWsUrl() {
@@ -26,6 +27,27 @@ function getDefaultWsUrl() {
 
 function el(id) {
     return document.getElementById(id);
+}
+
+function warmupBackends() {
+    if (state.warmupPromise) {
+        return state.warmupPromise;
+    }
+
+    state.warmupPromise = fetchWithTimeout(`${window.location.origin}/internal/warmup`, {}, 95000)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Warmup failed: HTTP ${response.status}`);
+            }
+            return response.json().catch(() => ({}));
+        })
+        .catch(error => {
+            console.warn('Backend warmup failed:', error);
+            state.warmupPromise = null;
+            throw error;
+        });
+
+    return state.warmupPromise;
 }
 
 function showToast(text) {
@@ -739,6 +761,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     checkUrlParams();
     switchTab('join');
+    warmupBackends().catch(() => {});
 });
 
 function checkUrlParams() {
