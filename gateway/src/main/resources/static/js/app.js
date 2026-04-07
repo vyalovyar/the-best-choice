@@ -20,6 +20,10 @@ const state = {
     wsUrl: window.BACKEND_WS_URL || getDefaultWsUrl(),
     warmupPromise: null,
     participantsPollId: null,
+    votingWarmupPromise: null,
+    votingInitPromise: null,
+    votingInitAttempts: 0,
+    startRequestSent: false,
 };
 
 function getDefaultWsUrl() {
@@ -36,7 +40,7 @@ function warmupBackends() {
         return state.warmupPromise;
     }
 
-    state.warmupPromise = fetchWithTimeout(`${window.location.origin}/internal/warmup`, {}, 95000)
+    state.warmupPromise = fetchWithTimeout(`${window.location.origin}/internal/warmup`, {}, 190000)
         .then(response => {
             if (!response.ok) {
                 throw new Error(`Warmup failed: HTTP ${response.status}`);
@@ -142,6 +146,13 @@ function stopParticipantsPolling() {
     state.participantsPollId = null;
 }
 
+function setStartButtonLoading(isLoading) {
+    const startBtn = el('startBtn');
+    if (!startBtn) return;
+    startBtn.disabled = isLoading;
+    startBtn.textContent = isLoading ? 'Запускаем...' : 'Начать выбор';
+}
+
 function formatJoinedAt(joinedAt) {
     if (!joinedAt) {
         return '';
@@ -158,7 +169,8 @@ function formatJoinedAt(joinedAt) {
 async function markSessionVotingStarted() {
     const response = await fetchWithTimeout(`${state.sessionServiceUrl}/${encodeURIComponent(state.sessionId)}/start`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store'
     }, 15000);
 
     if (!response.ok) {
@@ -170,8 +182,9 @@ async function markSessionVotingStarted() {
 }
 
 function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+    const requestOptions = { cache: 'no-store', ...options };
     return Promise.race([
-        fetch(url, options),
+        fetch(url, requestOptions),
         new Promise((_, reject) =>
             setTimeout(() => reject(new Error(`Запрос истёк (${timeoutMs}мс)`)), timeoutMs)
         )
@@ -383,7 +396,7 @@ async function loadParticipants() {
         updateParticipantsList();
 
         if (data.votingStarted === true && !state.votingStarted) {
-            handleStartMessage();
+            beginVotingStart();
         }
     } catch (err) {
         console.warn('loadParticipants error:', err);
@@ -439,9 +452,12 @@ function connectWebSocket() {
             state.connected = true;
 
             loadParticipants();
+            preloadVotingCatalog().catch(error => {
+                console.warn('preloadVotingCatalog error:', error);
+            });
 
-            state.stompClient.subscribe(`/topic/session/${state.sessionId}/start`, (msg) => {
-                handleStartMessage(msg);
+            state.stompClient.subscribe(`/topic/session/${state.sessionId}/start`, () => {
+                beginVotingStart();
             });
 
             state.stompClient.subscribe(`/topic/session/${state.sessionId}/votes`, (msg) => {
@@ -498,6 +514,75 @@ function handleStartMessage() {
     });
 }
 
+function preloadVotingCatalog() {
+    if (state.votingWarmupPromise) {
+        return state.votingWarmupPromise;
+    }
+
+    state.votingWarmupPromise = fetchWithTimeout(`${state.votingServiceUrl}/movies`, {}, 45000)
+        .then(resp => {
+            if (!resp.ok) {
+                throw new Error(`HTTP ${resp.status}`);
+            }
+            return resp.json();
+        })
+        .then(movies => {
+            if (Array.isArray(movies) && movies.length > 0) {
+                state.movies = movies;
+            }
+            return state.movies;
+        })
+        .catch(error => {
+            state.votingWarmupPromise = null;
+            throw error;
+        });
+
+    return state.votingWarmupPromise;
+}
+
+function ensureVotingStarted() {
+    if (state.votingStarted || state.votingInitPromise) {
+        return;
+    }
+
+    state.votingInitPromise = initVotingReliable()
+        .then(() => {
+            state.votingInitAttempts = 0;
+            state.votingInitPromise = null;
+            state.startRequestSent = false;
+            stopParticipantsPolling();
+            setStartButtonLoading(false);
+        })
+        .catch(err => {
+            state.votingInitPromise = null;
+            state.votingInitAttempts += 1;
+            console.error('initVoting error', err);
+
+            if (state.votingInitAttempts >= 8) {
+                state.startRequestSent = false;
+                setStartButtonLoading(false);
+                showToast('Сервис голосования пока недоступен');
+                return;
+            }
+
+            showToast('Сервис голосования просыпается...');
+            setTimeout(() => {
+                if (!state.votingStarted) {
+                    ensureVotingStarted();
+                }
+            }, 4000);
+        });
+}
+
+function beginVotingStart() {
+    if (state.votingStarted || state.votingInitPromise) {
+        return;
+    }
+
+    showToast('Голосование начато!');
+    ensureVotingStarted();
+}
+
 function handleVoteUpdate(message) {
     try {
         const vote = JSON.parse(message.body);
@@ -532,7 +617,14 @@ async function startVoting() {
         return;
     }
 
+    if (state.startRequestSent || state.votingStarted) {
+        return;
+    }
+
     try {
+        state.startRequestSent = true;
+        setStartButtonLoading(true);
+        warmupBackends().catch(() => {});
         await markSessionVotingStarted();
 
         if (state.connected && state.stompClient) {
@@ -542,19 +634,23 @@ async function startVoting() {
             }));
         }
 
-        handleStartMessage();
+        beginVotingStart();
     } catch (e) {
-        console.warn('startVoting failed, fallback to local', e);
-        handleStartMessage();
+        console.warn('startVoting failed', e);
+        state.startRequestSent = false;
+        setStartButtonLoading(false);
+        showToast('Не удалось запустить голосование');
     }
 }
 
 async function initVoting() {
     try {
-        const resp = await fetchWithTimeout(`${state.votingServiceUrl}/movies`, {}, 15000);
+        return initVotingReliable();
         if (!resp.ok) throw new Error(`Ошибка загрузки фильмов (${resp.status})`);
 
-        state.movies = await resp.json();
+        if (Array.isArray(warmedMovies) && warmedMovies.length > 0) {
+            state.movies = warmedMovies;
+        }
 
         if (!Array.isArray(state.movies) || state.movies.length === 0) {
             throw new Error('Нет доступных фильмов');
@@ -584,6 +680,45 @@ async function initVoting() {
         console.error('initVoting err', err);
         showToast(err.message || 'Ошибка загрузки фильмов');
     }
+}
+
+async function initVotingReliable() {
+    const warmedMovies = await preloadVotingCatalog();
+    if (Array.isArray(warmedMovies) && warmedMovies.length > 0) {
+        state.movies = warmedMovies;
+    }
+
+    if (!Array.isArray(state.movies) || state.movies.length === 0) {
+        const response = await fetchWithTimeout(`${state.votingServiceUrl}/movies`, {}, 45000);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        state.movies = await response.json();
+    }
+
+    if (!Array.isArray(state.movies) || state.movies.length === 0) {
+        throw new Error('No movies available');
+    }
+
+    state.currentMovieIndex = 0;
+    state.voted = false;
+    state.votedDecision = null;
+    state.participantVotes = {};
+    state.roundResolved = false;
+
+    loadCurrentMovie();
+    showVotingScreen();
+
+    const codeNode = el('votingSessionCode');
+    if (codeNode) codeNode.textContent = state.sessionCode || '—';
+
+    const notice = el('votingNotice');
+    if (notice) notice.textContent = 'Голосование началось!';
+
+    const yesBtn = el('yesBtn');
+    const noBtn = el('noBtn');
+    if (yesBtn) yesBtn.disabled = false;
+    if (noBtn) noBtn.disabled = false;
 }
 
 function vote(decision) {
@@ -753,6 +888,12 @@ function showWelcomeScreen() {
 function showWaitingScreen() {
     hideAllScreens();
     startParticipantsPolling();
+    setStartButtonLoading(false);
+    state.startRequestSent = false;
+    state.votingInitAttempts = 0;
+    preloadVotingCatalog().catch(error => {
+        console.warn('waiting-screen preloadVotingCatalog error:', error);
+    });
 
     const token = state.sessionCode || state.sessionId;
     const inviteLink = el('inviteLink');
@@ -776,6 +917,7 @@ function showWaitingScreen() {
 function showVotingScreen() {
     hideAllScreens();
     state.votingStarted = true;
+    setStartButtonLoading(false);
     const votingScreen = el('votingScreen');
     if (votingScreen) votingScreen.classList.add('active');
 }
@@ -838,6 +980,11 @@ function exitSession() {
     state.votedDecision = null;
     state.participantVotes = {};
     state.roundResolved = false;
+    state.startRequestSent = false;
+    state.votingWarmupPromise = null;
+    state.votingInitPromise = null;
+    state.votingInitAttempts = 0;
+    setStartButtonLoading(false);
 
     clearParticipantState();
 

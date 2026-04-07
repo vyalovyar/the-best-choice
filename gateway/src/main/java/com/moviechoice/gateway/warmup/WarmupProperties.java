@@ -9,8 +9,8 @@ public class WarmupProperties {
 
     private boolean enabled = true;
     private boolean startupEnabled = true;
-    private Duration timeout = Duration.ofSeconds(90);
-    private Duration retryDelay = Duration.ofSeconds(3);
+    private Duration timeout = Duration.ofSeconds(180);
+    private Duration retryDelay = Duration.ofSeconds(5);
 
     public boolean isEnabled() {
         return enabled;

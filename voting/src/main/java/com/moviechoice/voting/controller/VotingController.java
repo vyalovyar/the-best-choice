@@ -10,6 +10,8 @@ import com.moviechoice.voting.entity.Movie;
 import com.moviechoice.voting.entity.Vote;
 import com.moviechoice.voting.entity.VoteDecision;
 import com.moviechoice.voting.service.VotingService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -28,6 +30,7 @@ import java.util.UUID;
 public class VotingController {
     private final VotingService votingService;
     private final SimpMessagingTemplate simpMessagingTemplate;
+    private final ObjectMapper objectMapper;
 
     @GetMapping("/movies")
     public List<Movie> getMovies() {
@@ -60,10 +63,7 @@ public class VotingController {
         );
         
         //отправляем сообщение о голосе через WebSocket всем кто в сессии
-        simpMessagingTemplate.convertAndSend(
-                "/topic/session/" + request.getSessionId() + "/votes",
-                message
-        );
+        sendJson("/topic/session/" + request.getSessionId() + "/votes", message, "vote update");
         
         //проверяем совпадения голосов
         chekForMath(request.getSessionId(), request.getMovieId());
@@ -88,10 +88,7 @@ public class VotingController {
         votingService.updateMovieIndexInSession(request.getSessionId(), request.getMovieIndex());
         // уведомляем всех участников сессии об обновлённом индексе, чтобы клиенты синхронизировались
         try {
-            simpMessagingTemplate.convertAndSend(
-                    "/topic/session/" + request.getSessionId() + "/index",
-                    request
-            );
+            sendJson("/topic/session/" + request.getSessionId() + "/index", request, "movie index update");
         } catch (Exception e) {
             log.warn("Не удалось отправить WS-уведомление об обновлении индекса: {}", e.getMessage());
         }
@@ -126,13 +123,19 @@ public class VotingController {
                         "У вас совпадение!"
                 );
 
-                simpMessagingTemplate.convertAndSend(
-                        "/topic/session/" + sessionId + "/match",
-                        matchMessage
-                );
+                sendJson("/topic/session/" + sessionId + "/match", matchMessage, "match notification");
                 
                 log.info("Отправлено уведомление о совпадении для сессии={}, фильма={}", sessionId, movieId);
             }
+        }
+    }
+
+    //Метод для отправки JSON сообщений через WebSocket
+    private void sendJson(String destination, Object payload, String payloadType) {
+        try {
+            simpMessagingTemplate.convertAndSend(destination, objectMapper.writeValueAsString(payload));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize " + payloadType, e);
         }
     }
 }

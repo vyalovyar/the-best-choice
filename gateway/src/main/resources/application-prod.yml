@@ -5,8 +5,8 @@ app:
   warmup:
     enabled: ${WARMUP_ENABLED:true}
     startup-enabled: ${WARMUP_STARTUP_ENABLED:true}
-    timeout: ${WARMUP_TIMEOUT:90s}
-    retry-delay: ${WARMUP_RETRY_DELAY:3s}
+    timeout: ${WARMUP_TIMEOUT:180s}
+    retry-delay: ${WARMUP_RETRY_DELAY:5s}
 
 spring:
   cloud:
