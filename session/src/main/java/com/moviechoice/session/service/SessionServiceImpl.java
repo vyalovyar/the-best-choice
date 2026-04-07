@@ -59,9 +59,10 @@ public class SessionServiceImpl implements SessionService {
     @Override
     public Participant addParticipant(UUID sessionId, String participantName) {
         return getSessionById(sessionId).map(session -> {
+            String normalizedName = normalizeParticipantName(participantName);
             Participant participant = Participant.builder()
                     .session(session)
-                    .name(participantName)
+                    .name(normalizedName)
                     .joinedAt(ZonedDateTime.now())
                     .build();
             return participantRepository.save(participant);
@@ -76,5 +77,14 @@ public class SessionServiceImpl implements SessionService {
     @Override
     public void removeParticipant(UUID participantId) {
         participantRepository.deleteById(participantId);
+    }
+
+    private String normalizeParticipantName(String participantName) {
+        if (participantName == null) {
+            return "Guest";
+        }
+
+        String normalizedName = participantName.trim();
+        return normalizedName.isEmpty() ? "Guest" : normalizedName;
     }
 }

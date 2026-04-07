@@ -1,6 +1,7 @@
 const state = {
     sessionId: null,
     participantId: null,
+    participantName: null,
     sessionCode: null,
     isHost: false,
     votingStarted: false,
@@ -18,6 +19,7 @@ const state = {
     votingServiceUrl: window.BACKEND_VOTING_URL || `${window.location.origin}/api/voting`,
     wsUrl: window.BACKEND_WS_URL || getDefaultWsUrl(),
     warmupPromise: null,
+    participantsPollId: null,
 };
 
 function getDefaultWsUrl() {
@@ -64,6 +66,64 @@ function showToast(text) {
 
 function generateParticipantId() {
     return 'p_' + Math.random().toString(36).slice(2, 11);
+}
+
+function defaultParticipantName(isHost) {
+    const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+    return isHost ? `Host-${suffix}` : `Guest-${suffix}`;
+}
+
+async function registerParticipant(sessionId, isHost) {
+    const participantName = defaultParticipantName(isHost);
+    const response = await fetchWithTimeout(`${state.sessionServiceUrl}/${encodeURIComponent(sessionId)}/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: participantName })
+    }, 15000);
+
+    if (!response.ok) {
+        const txt = await response.text().catch(() => '');
+        throw new Error(`HTTP ${response.status}${txt ? `: ${txt}` : ''}`);
+    }
+
+    return response.json();
+}
+
+function persistParticipantState() {
+    if (state.participantId) {
+        localStorage.setItem('participantId', state.participantId);
+    }
+    if (state.sessionId) {
+        localStorage.setItem('sessionId', state.sessionId);
+    }
+    if (state.participantName) {
+        localStorage.setItem('participantName', state.participantName);
+    }
+    localStorage.setItem('isHost', String(Boolean(state.isHost)));
+}
+
+function clearParticipantState() {
+    localStorage.removeItem('participantId');
+    localStorage.removeItem('sessionId');
+    localStorage.removeItem('participantName');
+    localStorage.removeItem('isHost');
+}
+
+function startParticipantsPolling() {
+    stopParticipantsPolling();
+    if (!state.sessionId) return;
+
+    state.participantsPollId = setInterval(() => {
+        if (state.sessionId) {
+            loadParticipants();
+        }
+    }, 5000);
+}
+
+function stopParticipantsPolling() {
+    if (!state.participantsPollId) return;
+    clearInterval(state.participantsPollId);
+    state.participantsPollId = null;
 }
 
 function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
@@ -169,18 +229,19 @@ async function createSession() {
         }
 
         const data = await response.json();
+        const participant = await registerParticipant(data.sessionId, true);
 
         state.sessionId = data.sessionId;
         state.sessionCode = data.code;
         state.isHost = true;
-        state.participantId = generateParticipantId();
+        state.participantId = participant.participantId;
+        state.participantName = participant.name;
         state.voted = false;
         state.votedDecision = null;
         state.participantVotes = {};
         state.roundResolved = false;
 
-        localStorage.setItem('participantId', state.participantId);
-        localStorage.setItem('sessionId', state.sessionId);
+        persistParticipantState();
 
         showWaitingScreen();
         connectWebSocket();
@@ -210,18 +271,19 @@ async function joinSession() {
 
     try {
         const session = await resolveSessionFromInput(link);
+        const participant = await registerParticipant(session.sessionId, false);
 
         state.sessionId = session.sessionId;
         state.sessionCode = session.code;
         state.isHost = false;
-        state.participantId = generateParticipantId();
+        state.participantId = participant.participantId;
+        state.participantName = participant.name;
         state.voted = false;
         state.votedDecision = null;
         state.participantVotes = {};
         state.roundResolved = false;
 
-        localStorage.setItem('participantId', state.participantId);
-        localStorage.setItem('sessionId', state.sessionId);
+        persistParticipantState();
 
         showWaitingScreen();
         connectWebSocket();
@@ -238,18 +300,20 @@ async function joinSessionDirect() {
         if (!token) return;
 
         const session = await resolveSessionFromInput(token);
+        const existingParticipant = state.participantId && state.sessionId === session.sessionId;
+        const participant = existingParticipant ? null : await registerParticipant(session.sessionId, false);
 
         state.sessionId = session.sessionId;
         state.sessionCode = session.code;
-        state.isHost = false;
-        state.participantId = state.participantId || generateParticipantId();
+        state.isHost = existingParticipant ? state.isHost : false;
+        state.participantId = existingParticipant ? state.participantId : participant.participantId;
+        state.participantName = existingParticipant ? state.participantName : participant.name;
         state.voted = false;
         state.votedDecision = null;
         state.participantVotes = {};
         state.roundResolved = false;
 
-        localStorage.setItem('participantId', state.participantId);
-        localStorage.setItem('sessionId', state.sessionId);
+        persistParticipantState();
 
         showWaitingScreen();
         connectWebSocket();
@@ -416,7 +480,7 @@ function startVoting() {
         try {
             state.stompClient.send('/app/start-voting', {}, JSON.stringify({
                 sessionId: state.sessionId,
-                participantId: state.participantId
+                by: state.participantName || state.participantId || 'host'
             }));
         } catch (e) {
             console.warn('startVoting send failed, fallback to local', e);
@@ -630,6 +694,7 @@ function showWelcomeScreen() {
 
 function showWaitingScreen() {
     hideAllScreens();
+    startParticipantsPolling();
 
     const token = state.sessionCode || state.sessionId;
     const inviteLink = el('inviteLink');
@@ -697,6 +762,8 @@ function pasteFromClipboard() {
 }
 
 function exitSession() {
+    stopParticipantsPolling();
+
     if (state.stompClient && state.connected) {
         try {
             state.stompClient.disconnect();
@@ -707,14 +774,14 @@ function exitSession() {
     state.sessionId = null;
     state.sessionCode = null;
     state.participantId = null;
+    state.participantName = null;
     state.votingStarted = false;
     state.voted = false;
     state.votedDecision = null;
     state.participantVotes = {};
     state.roundResolved = false;
 
-    localStorage.removeItem('participantId');
-    localStorage.removeItem('sessionId');
+    clearParticipantState();
 
     showWelcomeScreen();
 }
@@ -753,10 +820,14 @@ function playConfetti() {
 document.addEventListener('DOMContentLoaded', () => {
     const savedPid = localStorage.getItem('participantId');
     const savedSid = localStorage.getItem('sessionId');
+    const savedParticipantName = localStorage.getItem('participantName');
+    const savedIsHost = localStorage.getItem('isHost') === 'true';
 
     if (savedPid && savedSid) {
         state.participantId = savedPid;
         state.sessionId = savedSid;
+        state.participantName = savedParticipantName;
+        state.isHost = savedIsHost;
     }
 
     checkUrlParams();
