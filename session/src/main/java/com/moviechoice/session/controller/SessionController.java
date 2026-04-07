@@ -2,6 +2,7 @@ package com.moviechoice.session.controller;
 
 
 import java.util.HashMap;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.moviechoice.session.entity.Session;
 import com.moviechoice.session.entity.Participant;
+import com.moviechoice.session.entity.SessionStatus;
 import com.moviechoice.session.service.SessionService;
 
 @RestController
@@ -109,21 +111,43 @@ public class SessionController {
         }
     }
 
+    @PostMapping("/{sessionId}/start")
+    public ResponseEntity<Map<String, Object>> startSession(@PathVariable String sessionId) {
+        try {
+            UUID uuid = UUID.fromString(sessionId);
+
+            return sessionService.getSessionById(uuid)
+                    .map(session -> {
+                        session.setStatus(SessionStatus.VOTING);
+                        Session updatedSession = sessionService.saveSession(session);
+                        List<Participant> participants = sessionService.getParticipants(uuid);
+                        return ResponseEntity.ok(buildSessionResponse(updatedSession, participants));
+                    })
+                    .orElse(ResponseEntity.notFound().build());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
     private Map<String, Object> buildSessionResponse(Session session, List<Participant> participants) {
         Map<String, Object> res = new HashMap<>();
         res.put("sessionId", session.getId().toString());
         res.put("code", session.getCode().toString());
         res.put("status", session.getStatus().toString());
-        res.put("currentMovieIndex", session.getCurrentMovieIndex().toString());
+        res.put("currentMovieIndex", session.getCurrentMovieIndex());
         res.put("participants", participants.stream()
                 .map(p -> {
                     Map<String, String> pMap = new HashMap<>();
                     pMap.put("id", p.getId().toString());
                     pMap.put("name", p.getName());
-                    pMap.put("joinedAt", p.getJoinedAt().toString());
+                    pMap.put("joinedAt", formatDateTime(p.getJoinedAt()));
                     return pMap;
                 })
                 .collect(Collectors.toList()));
         return res;
+    }
+
+    private String formatDateTime(ZonedDateTime dateTime) {
+        return dateTime == null ? null : dateTime.toOffsetDateTime().toString();
     }
 }

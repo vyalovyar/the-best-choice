@@ -126,6 +126,33 @@ function stopParticipantsPolling() {
     state.participantsPollId = null;
 }
 
+function formatJoinedAt(joinedAt) {
+    if (!joinedAt) {
+        return '';
+    }
+
+    const parsed = new Date(joinedAt);
+    if (Number.isNaN(parsed.getTime())) {
+        return '';
+    }
+
+    return parsed.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+}
+
+async function markSessionVotingStarted() {
+    const response = await fetchWithTimeout(`${state.sessionServiceUrl}/${encodeURIComponent(state.sessionId)}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    }, 15000);
+
+    if (!response.ok) {
+        const txt = await response.text().catch(() => '');
+        throw new Error(`HTTP ${response.status}${txt ? `: ${txt}` : ''}`);
+    }
+
+    return response.json();
+}
+
 function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
     return Promise.race([
         fetch(url, options),
@@ -335,6 +362,10 @@ async function loadParticipants() {
         const data = await response.json();
         state.participants = Array.isArray(data.participants) ? data.participants : [];
         updateParticipantsList();
+
+        if (data.status === 'VOTING' && !state.votingStarted) {
+            handleStartMessage();
+        }
     } catch (err) {
         console.warn('loadParticipants error:', err);
         state.participants = [];
@@ -352,7 +383,7 @@ function updateParticipantsList() {
     }
 
     listEl.innerHTML = state.participants.map(p => {
-        const time = p.joinedAt ? new Date(p.joinedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '';
+        const time = formatJoinedAt(p.joinedAt);
         const isMe = p.id === state.participantId ? ' ★' : '';
         return `
             <div style="padding: 8px 0; color: #ddd; font-size: 0.95em; border-bottom: 1px solid rgba(255,255,255,0.05);">
@@ -434,6 +465,11 @@ function connectWebSocket() {
 }
 
 function handleStartMessage() {
+    if (state.votingStarted) {
+        return;
+    }
+
+    stopParticipantsPolling();
     state.votingStarted = true;
     showToast('Голосование начато!');
     initVoting().catch(err => {
@@ -470,23 +506,25 @@ function handleMatchMessage(message) {
     }
 }
 
-function startVoting() {
+async function startVoting() {
     if (!state.isHost) {
         showToast('Только хост может начать голосование');
         return;
     }
 
-    if (state.connected && state.stompClient) {
-        try {
+    try {
+        await markSessionVotingStarted();
+
+        if (state.connected && state.stompClient) {
             state.stompClient.send('/app/start-voting', {}, JSON.stringify({
                 sessionId: state.sessionId,
                 by: state.participantName || state.participantId || 'host'
             }));
-        } catch (e) {
-            console.warn('startVoting send failed, fallback to local', e);
-            handleStartMessage();
         }
-    } else {
+
+        handleStartMessage();
+    } catch (e) {
+        console.warn('startVoting failed, fallback to local', e);
         handleStartMessage();
     }
 }
