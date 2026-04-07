@@ -42,6 +42,10 @@ public class Session {
     @Column(name = "current_movie_index")
     private Integer currentMovieIndex = 0;
 
+    @Builder.Default
+    @Column(name = "voting_started")
+    private Boolean votingStarted = false;
+
     @OneToMany(mappedBy = "session", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<Participant> participants;
 

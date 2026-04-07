@@ -7,6 +7,7 @@ import java.util.UUID;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.moviechoice.session.entity.Session;
 import com.moviechoice.session.entity.SessionStatus;
@@ -29,7 +30,13 @@ public class SessionServiceImpl implements SessionService {
     public Session createSession(){
         //генерирую уникальный код с помощью какого-нибудь алгоритма
         String uniqueCode = generateUniqCode();
-        Session session = Session.builder().code(uniqueCode).status(SessionStatus.ACTIVE).createdAt(ZonedDateTime.now()).currentMovieIndex(0).build();
+        Session session = Session.builder()
+                .code(uniqueCode)
+                .status(SessionStatus.ACTIVE)
+                .createdAt(ZonedDateTime.now())
+                .currentMovieIndex(0)
+                .votingStarted(false)
+                .build();
         session.setCreatedAt(ZonedDateTime.now());
 
         return sessionRepository.save(session);
@@ -57,6 +64,7 @@ public class SessionServiceImpl implements SessionService {
     }
 
     @Override
+    @Transactional
     public Participant addParticipant(UUID sessionId, String participantName) {
         return getSessionById(sessionId).map(session -> {
             String normalizedName = normalizeParticipantName(participantName);
@@ -70,6 +78,7 @@ public class SessionServiceImpl implements SessionService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<Participant> getParticipants(UUID sessionId) {
         return participantRepository.findAllBySessionId(sessionId);
     }

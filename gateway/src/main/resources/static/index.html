@@ -163,7 +163,7 @@
             <div>
                 <div class="brand">
                     <div class="brand-title">The Best Choice</div>
-                    <div class="brand-sub">Совместный выбор фильма — быстро и красиво</div>
+                    <div class="brand-sub">Совместный выбор фильма</div>
                 </div>
                 <div style="margin-top:18px;">
                     <div class="tabs">
@@ -175,7 +175,6 @@
                         <input id="sessionLink" type="text" placeholder="https://example.com/?session=..." />
                         <div class="actions" style="margin-top:12px;">
                             <button id="joinBtn" class="btn btn-primary" onclick="joinSession()">Присоединиться</button>
-                            <button class="btn btn-ghost" onclick="pasteFromClipboard()">Вставить ссылку</button>
                         </div>
                         <div id="joinError" class="error hidden"></div>
                     </div>
@@ -192,7 +191,7 @@
             <div>
                 <div class="panel">
                     <h3>Инструкция</h3>
-                    <p class="muted">1) Создайте сессию → 2) Поделитесь ссылкой → 3) Начните голосование → 4) Выбирайте фильмы вместе!</p>
+                    <p class="muted">Создайте сессию → Поделитесь ссылкой с другом → Начните голосование → Выбирайте фильмы вместе!</p>
                 </div>
             </div>
         </div>
@@ -269,8 +268,8 @@
         <div class="match-title" id="matchMovieTitle">Фильм совпал</div>
         <p class="muted">Вы оба выбрали этот фильм!</p>
         <div style="display:flex; gap:10px; justify-content:center; margin-top:18px;">
-            <button class="btn btn-primary" onclick="nextMatch()">Дальше</button>
-            <button class="btn btn-ghost" onclick="exitSession()">Выйти</button>
+
+            <button class="btn btn-ghost" onclick="exitSession()">Завершить</button>
         </div>
     </div>
 </div>

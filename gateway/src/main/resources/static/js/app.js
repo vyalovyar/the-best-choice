@@ -102,6 +102,22 @@ function persistParticipantState() {
     localStorage.setItem('isHost', String(Boolean(state.isHost)));
 }
 
+function upsertCurrentParticipant(joinedAt = null) {
+    if (!state.participantId) {
+        return;
+    }
+
+    const currentParticipant = {
+        id: state.participantId,
+        name: state.participantName || 'Участник',
+        joinedAt
+    };
+
+    const others = (state.participants || []).filter(p => p.id !== state.participantId);
+    state.participants = [currentParticipant, ...others];
+    updateParticipantsList();
+}
+
 function clearParticipantState() {
     localStorage.removeItem('participantId');
     localStorage.removeItem('sessionId');
@@ -269,6 +285,7 @@ async function createSession() {
         state.roundResolved = false;
 
         persistParticipantState();
+        upsertCurrentParticipant(participant.joinedAt);
 
         showWaitingScreen();
         connectWebSocket();
@@ -311,6 +328,7 @@ async function joinSession() {
         state.roundResolved = false;
 
         persistParticipantState();
+        upsertCurrentParticipant(participant.joinedAt);
 
         showWaitingScreen();
         connectWebSocket();
@@ -341,6 +359,7 @@ async function joinSessionDirect() {
         state.roundResolved = false;
 
         persistParticipantState();
+        upsertCurrentParticipant(existingParticipant ? null : participant.joinedAt);
 
         showWaitingScreen();
         connectWebSocket();
@@ -356,20 +375,21 @@ async function loadParticipants() {
     if (!listEl) return;
 
     try {
-        const response = await fetchWithTimeout(`${state.sessionServiceUrl}/${encodeURIComponent(state.sessionId)}`, {}, 10000);
+        const response = await fetchWithTimeout(`${state.sessionServiceUrl}/${encodeURIComponent(state.sessionId)}/participants`, {}, 10000);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const data = await response.json();
         state.participants = Array.isArray(data.participants) ? data.participants : [];
         updateParticipantsList();
 
-        if (data.status === 'VOTING' && !state.votingStarted) {
+        if (data.votingStarted === true && !state.votingStarted) {
             handleStartMessage();
         }
     } catch (err) {
         console.warn('loadParticipants error:', err);
-        state.participants = [];
-        updateParticipantsList();
+        if (!state.participants || state.participants.length === 0) {
+            updateParticipantsList();
+        }
     }
 }
 
