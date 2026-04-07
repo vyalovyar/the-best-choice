@@ -39,6 +39,7 @@ public class UpstreamWarmupService {
         this.votingServiceUrl = normalize(votingServiceUrl);
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(REQUEST_TIMEOUT)
+                .followRedirects(HttpClient.Redirect.NORMAL)
                 .build();
     }
 

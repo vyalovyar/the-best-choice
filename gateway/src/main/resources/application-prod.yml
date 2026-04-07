@@ -29,7 +29,7 @@ spring:
             - AddResponseHeader=X-Gateway-Handled, true
 
         - id: voting-service-ws
-          uri: ${VOTING_SERVICE_URL}
+          uri: ${VOTING_WS_URL:${VOTING_SERVICE_URL}}
           predicates:
             - Path=/ws/**
           filters:
