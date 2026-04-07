@@ -53,6 +53,9 @@ public class VotingService {
         if (movieRepository.count() == 0) {
             return true;
         }
+        if (movieRepository.existsByOverviewIsNull()) {
+            return true;
+        }
 
         // проверяем, когда последний раз обновляли кеш
         ZonedDateTime oneDayAgo = ZonedDateTime.now().minusDays(1);
@@ -81,6 +84,7 @@ public class VotingService {
             if (existingMovie.isPresent()) {
                 Movie movie = existingMovie.get();
                 movie.setTitle(dto.getTitle());
+                movie.setOverview(dto.getOverview());
                 movie.setVoteAvg(dto.getVoteAverage());
                 movie.setCacheAt(ZonedDateTime.now());
                 movie.setPosterPath(dto.getPosterPath());
@@ -91,6 +95,7 @@ public class VotingService {
                         .id(dto.getId())
                         .title(dto.getTitle())
                         .posterPath(dto.getPosterPath())
+                        .overview(dto.getOverview())
                         .voteAvg(dto.getVoteAverage())
                         .cacheAt(ZonedDateTime.now())
                         .build();

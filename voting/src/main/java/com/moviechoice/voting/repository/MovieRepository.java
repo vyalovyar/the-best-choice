@@ -17,6 +17,7 @@ public interface MovieRepository extends JpaRepository<Movie, Long> {
     Optional<Movie> findById(Long movieId);
 
     boolean existsById(Long Id);
+    boolean existsByOverviewIsNull();
 
     Optional<Movie> findTopByOrderByCacheAtDesc();
 

@@ -23,6 +23,9 @@ public class Movie {
     @Column(length = 255)
     private String posterPath;
 
+    @Column(columnDefinition = "TEXT")
+    private String overview;
+
     @Column
     private Double voteAvg;
 
