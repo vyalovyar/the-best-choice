@@ -109,7 +109,7 @@ public class VotingService {
     //Создание голоса
     @Transactional
     public Vote createVote(UUID sessionId, String participantId, Long movieId, VoteDecision decision) {
-        Movie movie = movieRepository.findById(movieId)  // ✅ Исправил: movi → movie
+        Movie movie = movieRepository.findById(movieId)
                 .orElseThrow(() -> new RuntimeException("Фильм не найден: " + movieId));
 
         Vote vote = Vote.builder()
@@ -144,7 +144,6 @@ public class VotingService {
             log.info("Индекс фильма обновлён: сессия={}, индекс={}", sessionId, movieIndex);
         } catch (Exception e) {
             log.warn("Ошибка при обновлении индекса фильма (не критично): {}", e.getMessage());
-            // не выбрасываю исключение, чтобы не ломат голосование
         }
     }
 }

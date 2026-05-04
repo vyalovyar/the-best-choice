@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -29,18 +30,25 @@ public class UpstreamWarmupService {
     private final String sessionServiceUrl;
     private final String votingServiceUrl;
 
+    @Autowired
     public UpstreamWarmupService(
             WarmupProperties properties,
             @Value("${SESSION_SERVICE_URL:}") String sessionServiceUrl,
             @Value("${VOTING_SERVICE_URL:}") String votingServiceUrl
     ) {
+        this(properties, sessionServiceUrl, votingServiceUrl, defaultHttpClient());
+    }
+
+    UpstreamWarmupService(
+            WarmupProperties properties,
+            String sessionServiceUrl,
+            String votingServiceUrl,
+            HttpClient httpClient
+    ) {
         this.properties = properties;
         this.sessionServiceUrl = normalize(sessionServiceUrl);
         this.votingServiceUrl = normalize(votingServiceUrl);
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(REQUEST_TIMEOUT)
-                .followRedirects(HttpClient.Redirect.NORMAL)
-                .build();
+        this.httpClient = httpClient;
     }
 
     public CompletableFuture<WarmupResult> warmupAsync() {
@@ -154,6 +162,13 @@ public class UpstreamWarmupService {
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    private static HttpClient defaultHttpClient() {
+        return HttpClient.newBuilder()
+                .connectTimeout(REQUEST_TIMEOUT)
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .build();
     }
 
     private static String normalize(String url) {
