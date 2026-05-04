@@ -109,6 +109,42 @@ class SessionServiceImplTest {
     }
 
     @Test
+    void updateMovieIndexUpdatesSessionAndPersistsIt() {
+        UUID sessionId = UUID.randomUUID();
+        Session session = Session.builder().id(sessionId).currentMovieIndex(0).build();
+        when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(sessionRepository.save(any(Session.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Session updatedSession = sessionService.updateMovieIndex(sessionId, 3).orElseThrow();
+
+        ArgumentCaptor<Session> sessionCaptor = ArgumentCaptor.forClass(Session.class);
+        verify(sessionRepository).save(sessionCaptor.capture());
+
+        Session savedSession = sessionCaptor.getValue();
+        assertThat(updatedSession).isSameAs(savedSession);
+        assertThat(savedSession.getCurrentMovieIndex()).isEqualTo(3);
+        assertThat(savedSession.getUpdatedAt()).isNotNull();
+    }
+
+    @Test
+    void startSessionMarksVotingStartedAndPersistsIt() {
+        UUID sessionId = UUID.randomUUID();
+        Session session = Session.builder().id(sessionId).votingStarted(false).build();
+        when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(sessionRepository.save(any(Session.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Session updatedSession = sessionService.startSession(sessionId).orElseThrow();
+
+        ArgumentCaptor<Session> sessionCaptor = ArgumentCaptor.forClass(Session.class);
+        verify(sessionRepository).save(sessionCaptor.capture());
+
+        Session savedSession = sessionCaptor.getValue();
+        assertThat(updatedSession).isSameAs(savedSession);
+        assertThat(savedSession.getVotingStarted()).isTrue();
+        assertThat(savedSession.getUpdatedAt()).isNotNull();
+    }
+
+    @Test
     void removeParticipantDelegatesToRepository() {
         UUID participantId = UUID.randomUUID();
 

@@ -14,6 +14,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.FetchType;
+import jakarta.persistence.Version;
 
 
 @Getter
@@ -45,6 +46,10 @@ public class Session {
     @Builder.Default
     @Column(name = "voting_started")
     private Boolean votingStarted = false;
+
+    @Version
+    @Column(name = "version")
+    private Long version;
 
     @OneToMany(mappedBy = "session", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<Participant> participants;

@@ -9,6 +9,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -119,18 +120,19 @@ public class SessionController {
         try {
             UUID uuid = UUID.fromString(sessionId);
             Integer movieIndex = body.get("currentMovieIndex");
-            
-            return sessionService.getSessionById(uuid)
-                    .map(session -> {
-                        session.setCurrentMovieIndex(movieIndex);
-                        Session updatedSession = sessionService.saveSession(session);
-                        
+
+            return sessionService.updateMovieIndex(uuid, movieIndex)
+                    .map(updatedSession -> {
                         Map<String, String> res = new HashMap<>();
                         res.put("sessionId", updatedSession.getId().toString());
                         res.put("currentMovieIndex", updatedSession.getCurrentMovieIndex().toString());
                         return ResponseEntity.ok(res);
                     })
                     .orElse(ResponseEntity.notFound().build());
+        } catch (ObjectOptimisticLockingFailureException e) {
+            Map<String, String> res = new HashMap<>();
+            res.put("error", "Session was updated concurrently. Please retry.");
+            return ResponseEntity.status(409).body(res);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().build();
         }
@@ -141,14 +143,16 @@ public class SessionController {
         try {
             UUID uuid = UUID.fromString(sessionId);
 
-            return sessionService.getSessionById(uuid)
-                    .map(session -> {
-                        session.setVotingStarted(true);
-                        Session updatedSession = sessionService.saveSession(session);
+            return sessionService.startSession(uuid)
+                    .map(updatedSession -> {
                         List<Participant> participants = sessionService.getParticipants(uuid);
                         return ResponseEntity.ok(buildSessionResponse(updatedSession, participants));
                     })
                     .orElse(ResponseEntity.notFound().build());
+        } catch (ObjectOptimisticLockingFailureException e) {
+            Map<String, Object> res = new HashMap<>();
+            res.put("error", "Session was updated concurrently. Please retry.");
+            return ResponseEntity.status(409).body(res);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().build();
         }

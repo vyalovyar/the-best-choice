@@ -27,6 +27,8 @@ public class SessionServiceImpl implements SessionService {
     }
 
     //Метод для создания сессии
+    @Override
+    @Transactional
     public Session createSession(){
         //генерирую уникальный код с помощью какого-нибудь алгоритма
         String uniqueCode = generateUniqCode();
@@ -43,17 +45,42 @@ public class SessionServiceImpl implements SessionService {
     }
 
     //метод для поиска сессии по коду
+    @Override
+    @Transactional(readOnly = true)
     public Optional<Session> findByCode(String code){
         return sessionRepository.findByCode(code);
     }
     @Override
+    @Transactional(readOnly = true)
     public Optional<Session> getSessionById(UUID sessionId) {
         return sessionRepository.findById(sessionId);
     }
 
     @Override
+    @Transactional
     public Session saveSession(Session session) {
+        session.setUpdatedAt(ZonedDateTime.now());
         return sessionRepository.save(session);
+    }
+
+    @Override
+    @Transactional
+    public Optional<Session> updateMovieIndex(UUID sessionId, int movieIndex) {
+        return sessionRepository.findById(sessionId).map(session -> {
+            session.setCurrentMovieIndex(movieIndex);
+            session.setUpdatedAt(ZonedDateTime.now());
+            return sessionRepository.save(session);
+        });
+    }
+
+    @Override
+    @Transactional
+    public Optional<Session> startSession(UUID sessionId) {
+        return sessionRepository.findById(sessionId).map(session -> {
+            session.setVotingStarted(true);
+            session.setUpdatedAt(ZonedDateTime.now());
+            return sessionRepository.save(session);
+        });
     }
 
     //Генерерация случайного кода 
@@ -84,6 +111,7 @@ public class SessionServiceImpl implements SessionService {
     }
 
     @Override
+    @Transactional
     public void removeParticipant(UUID participantId) {
         participantRepository.deleteById(participantId);
     }
