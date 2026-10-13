@@ -5,6 +5,9 @@ import com.moviechoice.voting.dto.tmld.TmdbMoviesResponseDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
@@ -18,16 +21,16 @@ public class TmdbClient {
     @Value("${tmdb.base-url}")
     private String baseUrl;
 
-    @Value("${tmdb.api-key}")
-    private String apiKey;
+    @Value("${tmdb.token}")
+    private String token;
 
-    //достаем популярные фильмы через апишку
-    public TmdbMoviesResponseDto getPopularMovies(){
-        String url = String.format("%s/movie/popular?api_key=%s&language=ru-RU&page=1", baseUrl, apiKey);
-        log.info("достаем фильмы");
-        //отправляем посыльного за фильмами
-        return restTemplate.getForObject(url, TmdbMoviesResponseDto.class);
+    public TmdbMoviesResponseDto getPopularMovies() {
+        String url = baseUrl + "/movie/popular?language=ru-RU&page=1";
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(token);
+        log.info("Запрашиваем популярные фильмы у TMDB");
+        return restTemplate
+                .exchange(url, HttpMethod.GET, new HttpEntity<>(headers), TmdbMoviesResponseDto.class)
+                .getBody();
     }
-
-
 }

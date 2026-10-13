@@ -410,21 +410,32 @@ function updateParticipantsList() {
     const listEl = el('participantsList');
     if (!listEl) return;
 
+    listEl.replaceChildren();
+
     if (!state.participants || state.participants.length === 0) {
-        listEl.innerHTML = '<p style="color:#999; text-align:center; margin:0;">Участники ещё не отображаются</p>';
+        const empty = document.createElement('p');
+        empty.style.cssText = 'color:#999; text-align:center; margin:0;';
+        empty.textContent = 'Участники ещё не отображаются';
+        listEl.appendChild(empty);
         return;
     }
 
-    listEl.innerHTML = state.participants.map(p => {
-        const time = formatJoinedAt(p.joinedAt);
+    state.participants.forEach(p => {
+        const row = document.createElement('div');
+        row.style.cssText = 'padding:8px 0; color:#ddd; font-size:0.95em; border-bottom:1px solid rgba(255,255,255,0.05);';
+
         const isMe = p.id === state.participantId ? ' ★' : '';
-        return `
-            <div style="padding: 8px 0; color: #ddd; font-size: 0.95em; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                ${p.name || 'Участник'}${isMe}
-                ${time ? `<span style="color:#666; font-size:0.85em;">@ ${time}</span>` : ''}
-            </div>
-        `;
-    }).join('');
+        row.append((p.name || 'Участник') + isMe);
+
+        const time = formatJoinedAt(p.joinedAt);
+        if (time) {
+            const t = document.createElement('span');
+            t.style.cssText = 'color:#666; font-size:0.85em; margin-left:6px;';
+            t.textContent = '@ ' + time;
+            row.appendChild(t);
+        }
+        listEl.appendChild(row);
+    });
 }
 
 function connectWebSocket() {

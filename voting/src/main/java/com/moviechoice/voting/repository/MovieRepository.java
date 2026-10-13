@@ -10,8 +10,6 @@ import java.util.Optional;
 
 @Repository
 public interface MovieRepository extends JpaRepository<Movie, Long> {
-    //Провверять на истечение срока в кэше 24 часа
-    List<Movie> findByCacheAtBefore(ZonedDateTime date);
 
     //поиск по ид
     Optional<Movie> findById(Long movieId);

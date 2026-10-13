@@ -11,6 +11,7 @@ import com.moviechoice.voting.repository.VoteRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,36 +38,33 @@ public class VotingService {
 
     private static final String SESSION_UPDATE_INDEX_PATH = "/api/sessions/%s/update-index";
 
+    private final Object refreshLock = new Object();
 
-    @Transactional(readOnly = true)
+
     public List<Movie> getMoviesForVote() {
         if (needsRefresh()) {
-            log.info("Кеш устарел, обновляем фильмы из TMDB");
-            updateMoviesFromTmdb();
+            synchronized (refreshLock) {
+                if (needsRefresh()) {
+                    log.info("Кеш устарел, обновляем фильмы из TMDB");
+                    updateMoviesFromTmdb();
+                }
+            }
         }
-        return movieRepository.findAll();
+        return movieRepository.findAll(Sort.by("id"));
     }
 
     // метод только проверяет, нужно ли обновлять
     private boolean needsRefresh() {
-        // Если в БД нет фильмов - точно нужно обновить
         if (movieRepository.count() == 0) {
             return true;
         }
-        if (movieRepository.existsByOverviewIsNull()) {
-            return true;
-        }
-
-        // проверяем, когда последний раз обновляли кеш
         ZonedDateTime oneDayAgo = ZonedDateTime.now().minusDays(1);
-        Optional<Movie> lastUpdated = movieRepository.findTopByOrderByCacheAtDesc();
-
-        return lastUpdated.map(movie -> movie.getCacheAt().isBefore(oneDayAgo))
+        return movieRepository.findTopByOrderByCacheAtDesc()
+                .map(m -> m.getCacheAt().isBefore(oneDayAgo))
                 .orElse(true);
     }
 
-    // отдельная транзакция для обновления
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional
     public void updateMoviesFromTmdb() {
         TmdbMoviesResponseDto responseDto = tmdbClient.getPopularMovies();
 
@@ -112,17 +110,17 @@ public class VotingService {
         Movie movie = movieRepository.findById(movieId)
                 .orElseThrow(() -> new RuntimeException("Фильм не найден: " + movieId));
 
-        Vote vote = Vote.builder()
-                .sessionId(sessionId)
-                .participantId(participantId)
-                .movie(movie)
-                .decision(decision)
-                .createdAt(ZonedDateTime.now())
-                .build();
+        Vote vote = voteRepository
+                .findBySessionIdAndParticipantIdAndMovie_Id(sessionId, participantId, movieId)
+                .orElseGet(() -> Vote.builder()
+                        .sessionId(sessionId)
+                        .participantId(participantId)
+                        .movie(movie)
+                        .build());
+        vote.setDecision(decision);
+        vote.setCreatedAt(ZonedDateTime.now());
 
-        log.info("Голос сохранён: участник={}, фильм={}, решение={}",
-                participantId, movieId, decision);
-
+        log.info("Голос сохранён: участник={}, фильм={}, решение={}", participantId, movieId, decision);
         return voteRepository.save(vote);
     }
 
@@ -145,5 +143,10 @@ public class VotingService {
         } catch (Exception e) {
             log.warn("Ошибка при обновлении индекса фильма (не критично): {}", e.getMessage());
         }
+    }
+
+    @Transactional(readOnly = true)
+    public long countLikes(UUID sessionId, Long movieId) {
+        return voteRepository.countDistinctParticipants(sessionId, movieId, VoteDecision.LIKE);
     }
 }

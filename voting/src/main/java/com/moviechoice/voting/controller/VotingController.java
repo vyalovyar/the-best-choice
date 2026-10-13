@@ -45,29 +45,20 @@ public class VotingController {
     @MessageMapping("/vote")
     public void handlerVote(@Payload VoteRequest request) {
         Vote vote = votingService.createVote(
-                request.getSessionId(),
-                request.getParticipantId(),
-                request.getMovieId(),
-                request.getDecision()
-        );
+                request.getSessionId(), request.getParticipantId(),
+                request.getMovieId(), request.getDecision());
 
         VoteMessage message = new VoteMessage(
-                vote.getId(),
-                vote.getSessionId(),
-                vote.getParticipantId(),
-                vote.getMovie().getId(),
-                vote.getMovie().getTitle(),
-                vote.getDecision(),
-                vote.getCreatedAt(),
-                "NEW_VOTE"
-        );
-        
-        //отправляем сообщение о голосе через WebSocket всем кто в сессии
+                vote.getId(), vote.getSessionId(), vote.getParticipantId(),
+                vote.getMovie().getId(), vote.getMovie().getTitle(),
+                vote.getDecision(), vote.getCreatedAt(), "NEW_VOTE");
         sendJson("/topic/session/" + request.getSessionId() + "/votes", message, "vote update");
-        
-        //проверяем совпадения голосов
-        chekForMath(request.getSessionId(), request.getMovieId());
+
+        if (vote.getDecision() == VoteDecision.LIKE) {
+            checkForMatch(vote);
+        }
     }
+
     @MessageMapping("/start-voting")
     public void handleStartVoting(@Payload StartVotingRequest request) {
         log.info("Start voting requested for session={}, by={}", request.getSessionId(), request.getBy());
@@ -94,40 +85,17 @@ public class VotingController {
         }
     }
 
-    private void chekForMath(UUID sessionId, long movieId) {
-        List<Vote> votes = votingService.getAllVotesInSession(sessionId);
-        
-        //достаём только голоса за текущий фильм
-        List<Vote> currentMovieVotes = votes.stream()
-                .filter(v -> v.getMovie().getId().equals(movieId))
-                .toList();
-
-        //считаем да по текущему фильму
-        long likeCount = currentMovieVotes.stream()
-                .filter(v -> v.getDecision() == VoteDecision.LIKE)
-                .count();
-
-        // Если оба проголосовали Да то отправляем уведомление о совпадении
-        if (likeCount >= 2) {
-            Movie movie = currentMovieVotes.stream()
-                    .findFirst()
-                    .map(Vote::getMovie)
-                    .orElse(null);
-            
-            if (movie != null) {
-                MatchMessage matchMessage = new MatchMessage(
-                        sessionId,
-                        movieId,
-                        movie.getTitle(),
-                        movie.getPosterPath(),
-                        "У вас совпадение!"
-                );
-
-                sendJson("/topic/session/" + sessionId + "/match", matchMessage, "match notification");
-                
-                log.info("Отправлено уведомление о совпадении для сессии={}, фильма={}", sessionId, movieId);
-            }
+    private void checkForMatch(Vote vote) {
+        Movie movie = vote.getMovie();
+        long likes = votingService.countLikes(vote.getSessionId(), movie.getId());
+        if (likes < 2) {
+            return;
         }
+        MatchMessage match = new MatchMessage(
+                vote.getSessionId(), movie.getId(), movie.getTitle(),
+                movie.getPosterPath(), "У вас совпадение!");
+        sendJson("/topic/session/" + vote.getSessionId() + "/match", match, "match notification");
+        log.info("Совпадение: сессия={}, фильм={}", vote.getSessionId(), movie.getId());
     }
 
     //Метод для отправки JSON сообщений через WebSocket

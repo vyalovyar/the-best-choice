@@ -16,6 +16,10 @@ movies:
   preload-on-startup: ${MOVIES_PRELOAD_ON_STARTUP:false}
 
 tmdb:
-  api-key: ${TMDB_API_KEY}
+  token: ${TMDB_TOKEN}
   base-url: https://api.themoviedb.org/3
   image-base-url: https://image.tmdb.org/t/p/w500
+
+session:
+  service:
+    url: ${SESSION_SERVICE_URL}

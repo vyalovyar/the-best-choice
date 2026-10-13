@@ -1,69 +1,63 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15-alpine
     container_name: thebestchoice-db
     environment:
       POSTGRES_DB: movie_choice_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks: [thebestchoice-network]
 
   session:
     build:
       context: .
       dockerfile: session/Dockerfile
     container_name: thebestchoice-session
-    ports:
-      - "8081:8081"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/movie_choice_db
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
-      SERVER_PORT: 8081
+      PORT: 8081
+      DATABASE_URL: jdbc:postgresql://postgres:5432/movie_choice_db
+      DATABASE_USER: ${POSTGRES_USER:-postgres}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8081/actuator/health"]
       interval: 10s
       timeout: 5s
-      retries: 3
-    networks:
-      - thebestchoice-network
+      retries: 10
+      start_period: 40s
+    networks: [thebestchoice-network]
 
   voting:
     build:
       context: .
       dockerfile: voting/Dockerfile
     container_name: thebestchoice-voting
-    ports:
-      - "8082:8082"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/movie_choice_db
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
-      SERVER_PORT: 8082
-      TMDB_API_KEY: ${TMDB_API_KEY:-a55a61a6c703616203db28065029d325}
+      PORT: 8082
+      DATABASE_URL: jdbc:postgresql://postgres:5432/movie_choice_db
+      DATABASE_USER: ${POSTGRES_USER:-postgres}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      TMDB_TOKEN: ${TMDB_TOKEN:?set TMDB_TOKEN in .env}
+      SESSION_SERVICE_URL: http://session:8081
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8082"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8082/actuator/health"]
       interval: 10s
       timeout: 5s
-      retries: 3
-    networks:
-      - thebestchoice-network
+      retries: 10
+      start_period: 40s
+    networks: [thebestchoice-network]
 
   gateway:
     build:
@@ -73,22 +67,21 @@ services:
     ports:
       - "8080:8080"
     environment:
-      SERVER_PORT: 8080
-      BACKEND_SESSION_URL: http://session:8081/api/sessions
-      BACKEND_VOTING_URL: http://voting:8082/api/voting
-      BACKEND_WS_URL: ws://localhost:8082/ws
+      PORT: 8080
+      SESSION_SERVICE_URL: http://session:8081
+      VOTING_SERVICE_URL: http://voting:8082
     depends_on:
       session:
         condition: service_healthy
       voting:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/"]
       interval: 10s
       timeout: 5s
-      retries: 3
-    networks:
-      - thebestchoice-network
+      retries: 10
+      start_period: 30s
+    networks: [thebestchoice-network]
 
 volumes:
   postgres_data:

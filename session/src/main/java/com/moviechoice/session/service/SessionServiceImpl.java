@@ -117,11 +117,9 @@ public class SessionServiceImpl implements SessionService {
     }
 
     private String normalizeParticipantName(String participantName) {
-        if (participantName == null) {
-            return "Guest";
-        }
-
-        String normalizedName = participantName.trim();
-        return normalizedName.isEmpty() ? "Guest" : normalizedName;
+        if (participantName == null) return "Guest";
+        String name = participantName.trim();
+        if (name.isEmpty()) return "Guest";
+        return name.length() > 50 ? name.substring(0, 50) : name;
     }
 }

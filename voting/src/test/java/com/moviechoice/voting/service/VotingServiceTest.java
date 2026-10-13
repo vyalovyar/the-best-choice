@@ -29,6 +29,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Sort;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestTemplate;
 
@@ -67,7 +68,7 @@ class VotingServiceTest {
         when(tmdbClient.getPopularMovies()).thenReturn(response);
         when(movieRepository.findById(101L)).thenReturn(Optional.empty());
         when(movieRepository.save(any(Movie.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(movieRepository.findAll()).thenReturn(expectedMovies);
+        when(movieRepository.findAll(any(Sort.class))).thenReturn(expectedMovies);
 
         List<Movie> actualMovies = votingService.getMoviesForVote();
 
@@ -94,9 +95,8 @@ class VotingServiceTest {
                 .build();
 
         when(movieRepository.count()).thenReturn(1L);
-        when(movieRepository.existsByOverviewIsNull()).thenReturn(false);
         when(movieRepository.findTopByOrderByCacheAtDesc()).thenReturn(Optional.of(cachedMovie));
-        when(movieRepository.findAll()).thenReturn(List.of(cachedMovie));
+        when(movieRepository.findAll(any(Sort.class))).thenReturn(List.of(cachedMovie));
 
         List<Movie> movies = votingService.getMoviesForVote();
 
@@ -225,6 +225,25 @@ class VotingServiceTest {
                 any(),
                 eq(Void.class)
         );
+    }
+    @Test
+    void createVoteUpdatesExistingVoteInsteadOfCreatingNewOne() {
+        UUID sessionId = UUID.randomUUID();
+        Movie movie = Movie.builder().id(10L).title("The Matrix").cacheAt(ZonedDateTime.now()).build();
+        Vote existing = Vote.builder()
+                .sessionId(sessionId).participantId("participant-1")
+                .movie(movie).decision(VoteDecision.DISLIKE)
+                .createdAt(ZonedDateTime.now().minusMinutes(1)).build();
+
+        when(movieRepository.findById(10L)).thenReturn(Optional.of(movie));
+        when(voteRepository.findBySessionIdAndParticipantIdAndMovie_Id(sessionId, "participant-1", 10L))
+                .thenReturn(Optional.of(existing));
+        when(voteRepository.save(any(Vote.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Vote result = votingService.createVote(sessionId, "participant-1", 10L, VoteDecision.LIKE);
+
+        assertThat(result).isSameAs(existing);
+        assertThat(result.getDecision()).isEqualTo(VoteDecision.LIKE);
     }
 
     private static TmdbMovieDto movieDto(Long id, String title, String overview, Double voteAverage, String posterPath) {

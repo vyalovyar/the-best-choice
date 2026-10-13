@@ -8,7 +8,7 @@ import java.time.ZonedDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "votes")
+@Table(name = "votes", uniqueConstraints = @UniqueConstraint(columnNames = {"sessionId", "participantId", "movie_id"}))
 @Getter
 @Setter
 @NoArgsConstructor
