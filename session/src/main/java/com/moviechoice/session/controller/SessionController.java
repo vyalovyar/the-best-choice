@@ -82,6 +82,7 @@ public class SessionController {
                         res.put("sessionId", session.getId().toString());
                         res.put("status", session.getStatus().toString());
                         res.put("votingStarted", Boolean.TRUE.equals(session.getVotingStarted()));
+                        res.put("currentMovieIndex", session.getCurrentMovieIndex());
                         res.put("participants", buildParticipantsResponse(participants));
                         return ResponseEntity.ok(res);
                     }).orElse(ResponseEntity.notFound().build());

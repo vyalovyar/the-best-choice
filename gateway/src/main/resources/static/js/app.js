@@ -397,7 +397,9 @@ async function loadParticipants() {
         state.participants = Array.isArray(data.participants) ? data.participants : [];
         updateParticipantsList();
 
-        if (data.votingStarted === true && Number.isInteger(data.currentMovieIndex)
+        if (data.votingStarted === true
+                && (!state.votingStarted || state.voted)
+                && Number.isInteger(data.currentMovieIndex)
                 && data.currentMovieIndex !== state.currentMovieIndex) {
             applyMovieIndexUpdate(data.currentMovieIndex);
         }
@@ -534,7 +536,6 @@ function handleStartMessage() {
         return;
     }
 
-    stopParticipantsPolling();
     state.votingStarted = true;
     showToast('Голосование начато!');
     initVoting().catch(err => {
@@ -579,7 +580,6 @@ function ensureVotingStarted() {
             state.votingInitAttempts = 0;
             state.votingInitPromise = null;
             state.startRequestSent = false;
-            stopParticipantsPolling();
             setStartButtonLoading(false);
         })
         .catch(err => {
@@ -827,6 +827,7 @@ function loadCurrentMovie() {
 }
 
 function showMatchScreen(match) {
+    stopParticipantsPolling();
     hideAllScreens();
     const matchTitle = el('matchTitle');
     const matchMovieTitle = el('matchMovieTitle');
@@ -910,6 +911,7 @@ function showWaitingScreen() {
 function showVotingScreen() {
     hideAllScreens();
     state.votingStarted = true;
+    startParticipantsPolling();
     setStartButtonLoading(false);
     const votingScreen = el('votingScreen');
     if (votingScreen) votingScreen.classList.add('active');
