@@ -27,8 +27,7 @@ const state = {
 };
 
 function getDefaultWsUrl() {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${proto}//${window.location.host}/ws`;
+    return `${window.location.origin}/ws`;
 }
 
 function el(id) {
@@ -1064,5 +1063,4 @@ window.pasteFromClipboard = pasteFromClipboard;
 window.exitSession = exitSession;
 window.goBackToWelcome = goBackToWelcome;
 window.vote = vote;
-window.nextMatch = nextMatch;
 window.joinSessionDirect = joinSessionDirect;
