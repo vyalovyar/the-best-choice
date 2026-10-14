@@ -22,4 +22,10 @@ public interface VoteRepository extends JpaRepository<Vote, UUID> {
 
     @Query("select count(distinct v.participantId) from Vote v where v.sessionId = :sessionId and v.movie.id = :movieId and v.decision = :decision")
     long countDistinctParticipants(@Param("sessionId") UUID sessionId, @Param("movieId") Long movieId, @Param("decision") VoteDecision decision);
+
+    @Query("select count(distinct v.participantId) from Vote v " +
+            "where v.sessionId = :sessionId and v.movie.id = :movieId")
+    long countParticipantsVoted(@Param("sessionId") UUID sessionId, @Param("movieId") Long movieId);
+
+    void deleteBySessionIdAndMovie_Id(UUID sessionId, Long movieId);
 }

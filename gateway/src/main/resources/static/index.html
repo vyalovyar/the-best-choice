@@ -29,6 +29,7 @@
             padding: 28px;
             transition: transform .28s cubic-bezier(.2,.9,.2,1), opacity .28s ease;
         }
+        .movie-overview { max-height: 240px; overflow-y: auto; line-height: 1.5; padding-right: 8px; }
         .screen.active { display: block; transform: translateY(0); opacity: 1; }
         .dark-card { background: linear-gradient(180deg,#0f172a,#0b1220); border: 1px solid rgba(255,255,255,0.03); }
         h1, h2, h3 { margin-bottom: 12px; font-weight: 600; color: #e6eef8; }
@@ -243,7 +244,7 @@
             </div>
             <div class="voting-right">
                 <div class="movie-title" id="movieTitle">Загрузка...</div>
-                <div class="movie-meta muted" id="movieMeta">Описание</div>
+                <div class="movie-meta muted movie-overview" id="movieMeta">Описание</div>
                 <div class="vote-row">
                     <button id="yesBtn" class="vote-btn like" onclick="vote('LIKE')">Да</button>
                     <button id="noBtn" class="vote-btn dislike" onclick="vote('DISLIKE')">Нет</button>

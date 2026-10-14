@@ -488,6 +488,8 @@ function connectWebSocket() {
                         state.voted = false;
                         state.votedDecision = null;
                         state.roundResolved = false;
+                        setVotingNotice('Голосование активно');
+                        renderStatusRow();
                         loadCurrentMovie();
                     }
                 } catch (e) {
@@ -497,6 +499,11 @@ function connectWebSocket() {
 
             state.stompClient.subscribe(`/topic/session/${state.sessionId}/participants`, () => {
                 loadParticipants();
+            });
+            state.stompClient.subscribe('/user/queue/errors', (msg) => {
+                let text = 'Ошибка голосования';
+                try { text = JSON.parse(msg.body).message || text; } catch {}
+                unlockVoting(text);
             });
 
         }, (err) => {
@@ -599,13 +606,14 @@ function handleVoteUpdate(message) {
         const vote = JSON.parse(message.body);
         if (!vote || !vote.participantId) return;
 
+        const current = state.movies[state.currentMovieIndex];
+        if (!current || vote.movieId !== current.id) return;
+
         state.participantVotes[vote.participantId] = vote.decision;
+        renderStatusRow();
 
-        if (state.roundResolved) return;
-
-        const votes = Object.values(state.participantVotes);
-        if (votes.length >= 2) {
-            resolveCurrentRound();
+        if (state.voted && vote.totalParticipants) {
+            setVotingNotice(`Ждём остальных: проголосовали ${vote.votedCount} из ${vote.totalParticipants}`);
         }
     } catch (e) {
         console.warn('handleVoteUpdate parse error', e);
@@ -627,6 +635,11 @@ async function startVoting() {
         showToast('Только хост может начать голосование');
         return;
     }
+    if ((state.participants || []).length < 2) {
+        showToast('Нужно минимум 2 участника');
+        return;
+    }
+
 
     if (state.startRequestSent || state.votingStarted) {
         return;
@@ -739,6 +752,10 @@ function vote(decision) {
         showToast('Сначала нажмите "Начать выбор"');
         return;
     }
+    if (!state.connected || !state.stompClient) {
+        showToast('Нет соединения с сервером, подождите секунду');
+        return;
+    }
 
     const movie = state.movies[state.currentMovieIndex];
     if (!movie) {
@@ -749,84 +766,25 @@ function vote(decision) {
     state.voted = true;
     state.votedDecision = decision;
     state.participantVotes[state.participantId] = decision;
-
-    const yesBtn = el('yesBtn');
-    const noBtn = el('noBtn');
-    if (yesBtn) yesBtn.disabled = true;
-    if (noBtn) noBtn.disabled = true;
-
+    setVoteButtonsDisabled(true);
+    setVotingNotice('Ждём остальных участников…');
     renderStatusRow();
 
-    if (state.connected && state.stompClient) {
-        try {
-            state.stompClient.send('/app/vote', {}, JSON.stringify({
-                sessionId: state.sessionId,
-                participantId: state.participantId,
-                movieId: movie.id,
-                decision: decision
-            }));
-        } catch (e) {
-            console.error('Failed to send vote:', e);
-        }
-    } else {
-        state.participantVotes[state.participantId] = decision;
-        if (decision === 'LIKE') {
-            state.roundResolved = true;
-            setTimeout(() => {
-                showMatchScreen({
-                    movieTitle: movie.title,
-                    posterPath: movie.posterPath
-                });
-            }, 300);
-        } else {
-            setTimeout(() => moveToNextMovie(), 300);
-        }
+    try {
+        state.stompClient.send('/app/vote', {}, JSON.stringify({
+            sessionId: state.sessionId,
+            participantId: state.participantId,
+            movieId: movie.id,
+            decision: decision
+        }));
+    } catch (e) {
+        console.error('Failed to send vote:', e);
+        unlockVoting('Не удалось отправить голос');
     }
 }
 
-function resolveCurrentRound() {
-    if (state.roundResolved) return;
 
-    const votes = Object.values(state.participantVotes);
-    if (votes.length < 2) return;
 
-    state.roundResolved = true;
-
-    if (votes.every(v => v === 'LIKE')) {
-        const movie = state.movies[state.currentMovieIndex];
-        setTimeout(() => {
-            showMatchScreen({
-                movieTitle: movie?.title || 'Фильм',
-                posterPath: movie?.posterPath
-            });
-        }, 400);
-    } else {
-        setTimeout(() => moveToNextMovie(), 400);
-    }
-}
-
-function moveToNextMovie() {
-    if (!state.movies.length) return;
-
-    state.participantVotes = {};
-    state.voted = false;
-    state.votedDecision = null;
-    state.roundResolved = false;
-    state.currentMovieIndex = (state.currentMovieIndex + 1) % state.movies.length;
-
-    loadCurrentMovie();
-
-    if (state.connected && state.stompClient) {
-        try {
-            state.stompClient.send('/app/update-movie-index', {}, JSON.stringify({
-                sessionId: state.sessionId,
-                movieIndex: state.currentMovieIndex
-            }));
-        } catch (e) {
-            console.warn('Failed to send update-movie-index', e);
-        }
-    }
-}
 
 function loadCurrentMovie() {
     const movie = state.movies[state.currentMovieIndex];
@@ -846,7 +804,7 @@ function loadCurrentMovie() {
     const noBtn = el('noBtn');
 
     if (movieTitle) movieTitle.textContent = movie.title || 'Без названия';
-    if (movieMeta) movieMeta.textContent = movie.overview ? movie.overview.substring(0, 100) + '...' : '';
+    if (movieMeta) movieMeta.textContent = movie.overview || 'Описание отсутствует';
     if (movieCounter) movieCounter.textContent = `Фильм ${state.currentMovieIndex + 1} из ${state.movies.length}`;
     if (moviePoster) {
         moviePoster.src = movie.posterPath
@@ -879,11 +837,26 @@ function showMatchScreen(match) {
     playConfetti();
 }
 
-function nextMatch() {
-    state.roundResolved = false;
-    hideAllScreens();
-    moveToNextMovie();
-    showVotingScreen();
+function setVoteButtonsDisabled(disabled) {
+    const yesBtn = el('yesBtn');
+    const noBtn = el('noBtn');
+    if (yesBtn) yesBtn.disabled = disabled;
+    if (noBtn) noBtn.disabled = disabled;
+}
+
+function setVotingNotice(text) {
+    const notice = el('votingNotice');
+    if (notice) notice.textContent = text;
+}
+
+function unlockVoting(message) {
+    state.voted = false;
+    state.votedDecision = null;
+    delete state.participantVotes[state.participantId];
+    setVoteButtonsDisabled(false);
+    setVotingNotice('Голосование активно');
+    renderStatusRow();
+    if (message) showToast(message);
 }
 
 function hideAllScreens() {

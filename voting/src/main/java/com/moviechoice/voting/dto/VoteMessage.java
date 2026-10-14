@@ -20,4 +20,6 @@ public class VoteMessage {
     private VoteDecision decision;
     private ZonedDateTime timestamp;
     private String type;
+    private long votedCount;
+    private int totalParticipants;
 }

@@ -1,6 +1,7 @@
 package com.moviechoice.voting.service;
 
 import com.moviechoice.voting.client.TmdbClient;
+import com.moviechoice.voting.dto.VoteOutcome;
 import com.moviechoice.voting.dto.tmld.TmdbMovieDto;
 import com.moviechoice.voting.dto.tmld.TmdbMoviesResponseDto;
 import com.moviechoice.voting.entity.Movie;
@@ -39,6 +40,9 @@ public class VotingService {
     private static final String SESSION_UPDATE_INDEX_PATH = "/api/sessions/%s/update-index";
 
     private final Object refreshLock = new Object();
+    private final Object lockStub = new Object();
+    private final java.util.concurrent.ConcurrentHashMap<UUID, Object> sessionLocks =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
 
     public List<Movie> getMoviesForVote() {
@@ -115,13 +119,57 @@ public class VotingService {
                 .orElseGet(() -> Vote.builder()
                         .sessionId(sessionId)
                         .participantId(participantId)
-                        .movie(movie)
                         .build());
+        vote.setMovie(movie);
         vote.setDecision(decision);
         vote.setCreatedAt(ZonedDateTime.now());
 
         log.info("Голос сохранён: участник={}, фильм={}, решение={}", participantId, movieId, decision);
         return voteRepository.save(vote);
+    }
+    public VoteOutcome castVote(UUID sessionId, String participantId, Long movieId, VoteDecision decision) {
+        // один раунд сессии обрабатывается строго по очереди
+        synchronized (sessionLocks.computeIfAbsent(sessionId, id -> new Object())) {
+            List<String> participants = getParticipantIds(sessionId);
+            if (participants.size() < 2) {
+                throw new IllegalStateException("Для голосования нужно минимум 2 участника");
+            }
+            if (!participants.contains(participantId)) {
+                throw new IllegalStateException("Участник не найден в сессии");
+            }
+
+            Vote vote = createVote(sessionId, participantId, movieId, decision);
+            int total = participants.size();
+            long voted = voteRepository.countParticipantsVoted(sessionId, movieId);
+
+            if (voted < total) {
+                return new VoteOutcome(vote, voted, total, VoteOutcome.Status.WAITING, null);
+            }
+
+            long likes = voteRepository.countDistinctParticipants(sessionId, movieId, VoteDecision.LIKE);
+            voteRepository.deleteBySessionIdAndMovie_Id(sessionId, movieId);
+
+            if (likes >= total) {
+                return new VoteOutcome(vote, voted, total, VoteOutcome.Status.MATCH, null);
+            }
+
+            List<Long> ids = movieRepository.findAllIdsOrdered();
+            int next = ids.isEmpty() ? 0 : (ids.indexOf(movieId) + 1) % ids.size();
+            updateMovieIndexInSession(sessionId, next);
+            return new VoteOutcome(vote, voted, total, VoteOutcome.Status.NEXT, next);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> getParticipantIds(UUID sessionId) {
+        String url = sessionServiceUrl + "/api/sessions/" + sessionId + "/participants";
+        java.util.Map<String, Object> body = restTemplate.getForObject(url, java.util.Map.class);
+        if (body == null || !(body.get("participants") instanceof List<?> raw)) {
+            throw new IllegalStateException("Не удалось получить участников сессии");
+        }
+        return ((List<java.util.Map<String, Object>>) raw).stream()
+                .map(p -> String.valueOf(p.get("id")))
+                .toList();
     }
 
     // получение всех голосов в сессии, нам важен ВАШ голос
