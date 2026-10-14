@@ -246,6 +246,76 @@ class VotingServiceTest {
         assertThat(result.getDecision()).isEqualTo(VoteDecision.LIKE);
     }
 
+    @Test
+    void castVoteWaitsUntilEveryParticipantHasVoted() {
+        UUID sessionId = UUID.randomUUID();
+        Movie movie = movie(10L);
+        mockParticipants(sessionId);
+        when(movieRepository.findById(10L)).thenReturn(Optional.of(movie));
+        when(voteRepository.save(any(Vote.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(voteRepository.countParticipantsVoted(sessionId, 10L)).thenReturn(1L);
+
+        var outcome = votingService.castVote(sessionId, "participant-1", 10L, VoteDecision.DISLIKE);
+
+        assertThat(outcome.status()).isEqualTo(com.moviechoice.voting.dto.VoteOutcome.Status.WAITING);
+        assertThat(outcome.voted()).isEqualTo(1);
+        assertThat(outcome.total()).isEqualTo(2);
+        verify(voteRepository, never()).deleteBySessionIdAndMovie_Id(sessionId, 10L);
+        verify(movieRepository, never()).findAllIdsOrdered();
+    }
+
+    @Test
+    void castVoteAdvancesToNextMovieAfterAnyDislike() {
+        UUID sessionId = UUID.randomUUID();
+        Movie movie = movie(10L);
+        mockParticipants(sessionId);
+        when(movieRepository.findById(10L)).thenReturn(Optional.of(movie));
+        when(voteRepository.save(any(Vote.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(voteRepository.countParticipantsVoted(sessionId, 10L)).thenReturn(2L);
+        when(voteRepository.countDistinctParticipants(sessionId, 10L, VoteDecision.LIKE)).thenReturn(1L);
+        when(movieRepository.findAllIdsOrdered()).thenReturn(List.of(10L, 20L));
+
+        var outcome = votingService.castVote(sessionId, "participant-2", 10L, VoteDecision.DISLIKE);
+
+        assertThat(outcome.status()).isEqualTo(com.moviechoice.voting.dto.VoteOutcome.Status.NEXT);
+        assertThat(outcome.nextMovieIndex()).isEqualTo(1);
+        verify(voteRepository).deleteBySessionIdAndMovie_Id(sessionId, 10L);
+        verify(restTemplate).postForObject(
+                eq("http://session-service/api/sessions/" + sessionId + "/update-index"),
+                any(),
+                eq(Void.class));
+    }
+
+    @Test
+    void castVoteMatchesOnlyWhenEveryParticipantLikesMovie() {
+        UUID sessionId = UUID.randomUUID();
+        Movie movie = movie(10L);
+        mockParticipants(sessionId);
+        when(movieRepository.findById(10L)).thenReturn(Optional.of(movie));
+        when(voteRepository.save(any(Vote.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(voteRepository.countParticipantsVoted(sessionId, 10L)).thenReturn(2L);
+        when(voteRepository.countDistinctParticipants(sessionId, 10L, VoteDecision.LIKE)).thenReturn(2L);
+
+        var outcome = votingService.castVote(sessionId, "participant-2", 10L, VoteDecision.LIKE);
+
+        assertThat(outcome.status()).isEqualTo(com.moviechoice.voting.dto.VoteOutcome.Status.MATCH);
+        verify(voteRepository).deleteBySessionIdAndMovie_Id(sessionId, 10L);
+        verify(movieRepository, never()).findAllIdsOrdered();
+        verify(restTemplate, never()).postForObject(any(String.class), any(), eq(Void.class));
+    }
+
+    private void mockParticipants(UUID sessionId) {
+        String url = "http://session-service/api/sessions/" + sessionId + "/participants";
+        Map<String, Object> response = Map.of("participants", List.of(
+                Map.of("id", "participant-1"),
+                Map.of("id", "participant-2")));
+        when(restTemplate.getForObject(eq(url), eq(Map.class))).thenReturn(response);
+    }
+
+    private static Movie movie(Long id) {
+        return Movie.builder().id(id).title("Movie " + id).cacheAt(ZonedDateTime.now()).build();
+    }
+
     private static TmdbMovieDto movieDto(Long id, String title, String overview, Double voteAverage, String posterPath) {
         TmdbMovieDto dto = new TmdbMovieDto();
         dto.setId(id);

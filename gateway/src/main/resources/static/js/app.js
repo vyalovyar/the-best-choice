@@ -291,6 +291,7 @@ async function createSession() {
         state.isHost = true;
         state.participantId = participant.participantId;
         state.participantName = participant.name;
+        state.currentMovieIndex = Number.isInteger(data.currentMovieIndex) ? data.currentMovieIndex : 0;
         state.voted = false;
         state.votedDecision = null;
         state.participantVotes = {};
@@ -334,6 +335,7 @@ async function joinSession() {
         state.isHost = false;
         state.participantId = participant.participantId;
         state.participantName = participant.name;
+        state.currentMovieIndex = Number.isInteger(session.currentMovieIndex) ? session.currentMovieIndex : 0;
         state.voted = false;
         state.votedDecision = null;
         state.participantVotes = {};
@@ -365,6 +367,7 @@ async function joinSessionDirect() {
         state.isHost = existingParticipant ? state.isHost : false;
         state.participantId = existingParticipant ? state.participantId : participant.participantId;
         state.participantName = existingParticipant ? state.participantName : participant.name;
+        state.currentMovieIndex = Number.isInteger(session.currentMovieIndex) ? session.currentMovieIndex : 0;
         state.voted = false;
         state.votedDecision = null;
         state.participantVotes = {};
@@ -393,6 +396,11 @@ async function loadParticipants() {
         const data = await response.json();
         state.participants = Array.isArray(data.participants) ? data.participants : [];
         updateParticipantsList();
+
+        if (data.votingStarted === true && Number.isInteger(data.currentMovieIndex)
+                && data.currentMovieIndex !== state.currentMovieIndex) {
+            applyMovieIndexUpdate(data.currentMovieIndex);
+        }
 
         if (data.votingStarted === true && !state.votingStarted) {
             beginVotingStart();
@@ -482,14 +490,7 @@ function connectWebSocket() {
                 try {
                     const payload = JSON.parse(msg.body);
                     if (payload && typeof payload.movieIndex === 'number') {
-                        state.currentMovieIndex = payload.movieIndex;
-                        state.participantVotes = {};
-                        state.voted = false;
-                        state.votedDecision = null;
-                        state.roundResolved = false;
-                        setVotingNotice('Голосование активно');
-                        renderStatusRow();
-                        loadCurrentMovie();
+                        applyMovieIndexUpdate(payload.movieIndex);
                     }
                 } catch (e) {
                     console.warn('index subscription parse error', e);
@@ -515,6 +516,17 @@ function connectWebSocket() {
     } catch (err) {
         console.error('connectWebSocket exception', err);
     }
+}
+
+function applyMovieIndexUpdate(movieIndex) {
+    state.currentMovieIndex = movieIndex;
+    state.participantVotes = {};
+    state.voted = false;
+    state.votedDecision = null;
+    state.roundResolved = false;
+    setVotingNotice('Голосование активно');
+    renderStatusRow();
+    loadCurrentMovie();
 }
 
 function handleStartMessage() {
@@ -679,7 +691,6 @@ async function initVoting() {
             throw new Error('Нет доступных фильмов');
         }
 
-        state.currentMovieIndex = 0;
         state.voted = false;
         state.votedDecision = null;
         state.participantVotes = {};
@@ -723,7 +734,6 @@ async function initVotingReliable() {
         throw new Error('No movies available');
     }
 
-    state.currentMovieIndex = 0;
     state.voted = false;
     state.votedDecision = null;
     state.participantVotes = {};
