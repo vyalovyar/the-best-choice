@@ -70,6 +70,7 @@ services:
       PORT: 8080
       SESSION_SERVICE_URL: http://session:8081
       VOTING_SERVICE_URL: http://voting:8082
+      VOTING_WS_URL: ws://voting:8082
     depends_on:
       session:
         condition: service_healthy
