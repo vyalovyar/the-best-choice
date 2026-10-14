@@ -502,10 +502,11 @@ function connectWebSocket() {
             state.stompClient.subscribe(`/topic/session/${state.sessionId}/participants`, () => {
                 loadParticipants();
             });
-            state.stompClient.subscribe('/user/queue/errors', (msg) => {
-                let text = 'Ошибка голосования';
-                try { text = JSON.parse(msg.body).message || text; } catch {}
-                unlockVoting(text);
+            state.stompClient.subscribe(`/topic/session/${state.sessionId}/errors`, (msg) => {
+                try {
+                    const p = JSON.parse(msg.body);
+                    if (p.participantId === state.participantId) unlockVoting(p.message);
+                } catch {}
             });
 
         }, (err) => {

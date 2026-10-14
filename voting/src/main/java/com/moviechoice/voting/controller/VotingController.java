@@ -42,32 +42,41 @@ public class VotingController {
 
     @MessageMapping("/vote")
     public void handlerVote(@Payload VoteRequest request) {
-        VoteOutcome outcome = votingService.castVote(
-                request.getSessionId(), request.getParticipantId(),
-                request.getMovieId(), request.getDecision());
-        Vote vote = outcome.vote();
-        String base = "/topic/session/" + request.getSessionId();
+        try {
+            VoteOutcome outcome = votingService.castVote(
+                    request.getSessionId(), request.getParticipantId(),
+                    request.getMovieId(), request.getDecision());
+            Vote vote = outcome.vote();
+            String base = "/topic/session/" + request.getSessionId();
 
-        VoteMessage message = new VoteMessage(
-                vote.getId(), vote.getSessionId(), vote.getParticipantId(),
-                vote.getMovie().getId(), vote.getMovie().getTitle(),
-                vote.getDecision(), vote.getCreatedAt(), "NEW_VOTE",
-                outcome.voted(), outcome.total());
-        sendJson(base + "/votes", message, "vote update");
+            VoteMessage message = new VoteMessage(
+                    vote.getId(), vote.getSessionId(), vote.getParticipantId(),
+                    vote.getMovie().getId(), vote.getMovie().getTitle(),
+                    vote.getDecision(), vote.getCreatedAt(), "NEW_VOTE",
+                    outcome.voted(), outcome.total());
+            sendJson(base + "/votes", message, "vote update");
 
-        switch (outcome.status()) {
-            case MATCH -> {
-                Movie movie = vote.getMovie();
-                sendJson(base + "/match", new MatchMessage(
-                        vote.getSessionId(), movie.getId(), movie.getTitle(),
-                        movie.getPosterPath(), "У вас совпадение!"), "match notification");
-                log.info("Совпадение: сессия={}, фильм={}", vote.getSessionId(), movie.getId());
+            switch (outcome.status()) {
+                case MATCH -> {
+                    Movie movie = vote.getMovie();
+                    sendJson(base + "/match", new MatchMessage(
+                            vote.getSessionId(), movie.getId(), movie.getTitle(),
+                            movie.getPosterPath(), "У вас совпадение!"), "match notification");
+                    log.info("Совпадение: сессия={}, фильм={}", vote.getSessionId(), movie.getId());
+                }
+                case NEXT -> sendJson(base + "/index",
+                        new UpdateMovieIndexRequest(vote.getSessionId(), outcome.nextMovieIndex()),
+                        "movie index update");
+                case WAITING -> { }
             }
-            case NEXT -> sendJson(base + "/index",
-                    new UpdateMovieIndexRequest(vote.getSessionId(), outcome.nextMovieIndex()),
-                    "movie index update");
-            case WAITING -> { }
+        }catch (Exception e) {
+            log.error("Ошибка голосования", e);
+            sendJson("/topic/session/" + request.getSessionId() + "/errors",
+                    Map.of("participantId", request.getParticipantId(),
+                            "message", e.getMessage() == null ? "Ошибка голосования" : e.getMessage()),
+                    "error");
         }
+
     }
 
     @MessageMapping("/start-voting")

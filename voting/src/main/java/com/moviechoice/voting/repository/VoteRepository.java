@@ -3,6 +3,7 @@ package com.moviechoice.voting.repository;
 
 import com.moviechoice.voting.entity.Vote;
 import com.moviechoice.voting.entity.VoteDecision;
+import jakarta.transaction.Transactional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -27,5 +28,6 @@ public interface VoteRepository extends JpaRepository<Vote, UUID> {
             "where v.sessionId = :sessionId and v.movie.id = :movieId")
     long countParticipantsVoted(@Param("sessionId") UUID sessionId, @Param("movieId") Long movieId);
 
+    @Transactional
     void deleteBySessionIdAndMovie_Id(UUID sessionId, Long movieId);
 }
