@@ -25,6 +25,7 @@ services:
       DATABASE_URL: jdbc:postgresql://postgres:5432/movie_choice_db
       DATABASE_USER: ${POSTGRES_USER:-postgres}
       DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      VOTING_SERVICE_URL: http://voting:8082
     depends_on:
       postgres:
         condition: service_healthy
