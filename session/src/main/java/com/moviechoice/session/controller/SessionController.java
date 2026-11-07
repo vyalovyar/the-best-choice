@@ -8,9 +8,11 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -97,6 +99,18 @@ public class SessionController {
             UUID uuid = UUID.fromString(sessionId);
             String participantName = body.get("name");
             
+            if (participantName == null || participantName.isBlank()) {
+                Map<String, Object> err = new HashMap<>();
+                err.put("error", "Укажите никнейм");
+                return ResponseEntity.badRequest().body(err);
+            }
+            if (sessionService.isNameTaken(uuid, participantName)) {
+                Map<String, Object> res = new HashMap<>();
+                res.put("error", "Этот никнейм уже занят в сессии");
+                res.put("code", "NAME_TAKEN");
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(res);
+            }
+
             Participant participant = sessionService.addParticipant(uuid, participantName);
             if (participant == null) {
                 return ResponseEntity.notFound().build();
@@ -108,6 +122,73 @@ public class SessionController {
             res.put("participantId", participant.getId().toString());
             res.put("name", participant.getName());
             res.put("joinedAt", participant.getJoinedAt());
+            return ResponseEntity.ok(res);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    @GetMapping("/{sessionId}/name-available")
+    public ResponseEntity<Map<String, Object>> isNameAvailable(
+            @PathVariable String sessionId, @RequestParam String name) {
+        try {
+            UUID uuid = UUID.fromString(sessionId);
+            if (sessionService.getSessionById(uuid).isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+
+            String normalizedName = name == null ? "" : name.trim().replaceAll("\\s+", " ");
+            Map<String, Object> res = new HashMap<>();
+
+            if (normalizedName.isEmpty()) {
+                res.put("available", false);
+                res.put("error", "Никнейм не может быть пустым");
+                return ResponseEntity.badRequest().body(res);
+            }
+            if (normalizedName.length() > 20) {
+                res.put("available", false);
+                res.put("error", "Никнейм не длиннее 20 символов");
+                return ResponseEntity.badRequest().body(res);
+            }
+
+            boolean taken = sessionService.isNameTaken(uuid, normalizedName);
+            res.put("available", !taken);
+            res.put("name", normalizedName);
+            if (taken) {
+                res.put("error", "Этот никнейм уже занят в сессии");
+            }
+            return ResponseEntity.ok(res);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    @DeleteMapping("/{sessionId}/participants/{participantId}")
+    public ResponseEntity<Map<String, Object>> leaveSession(
+            @PathVariable String sessionId, @PathVariable String participantId) {
+        try {
+            UUID sessionUuid = UUID.fromString(sessionId);
+            UUID participantUuid = UUID.fromString(participantId);
+
+            Participant participant = sessionService.findByParticipantId(participantUuid).orElse(null);
+            if (participant == null) {
+                return ResponseEntity.notFound().build();
+            }
+            if (participant.getSession() == null || !sessionUuid.equals(participant.getSession().getId())) {
+                Map<String, Object> res = new HashMap<>();
+                res.put("error", "Участник не относится к этой сессии");
+                return ResponseEntity.badRequest().body(res);
+            }
+
+            sessionService.removeParticipant(participantUuid);
+
+            List<Participant> remaining = sessionService.getParticipants(sessionUuid);
+            Map<String, Object> res = new HashMap<>();
+            res.put("sessionId", sessionUuid.toString());
+            res.put("participantId", participantId);
+            res.put("participants", buildParticipantsResponse(remaining));
+            log.info("Participant {} left session {}, remaining: {}",
+                    participantId, sessionUuid, remaining.size());
             return ResponseEntity.ok(res);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().build();
@@ -144,7 +225,35 @@ public class SessionController {
         try {
             UUID uuid = UUID.fromString(sessionId);
 
+            List<Participant> participants = sessionService.getParticipants(uuid);
+            if (participants.isEmpty() && sessionService.getSessionById(uuid).isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+            if (participants.size() < 2) {
+                Map<String, Object> res = new HashMap<>();
+                res.put("error", "Для старта нужно минимум 2 участника");
+                res.put("participants", buildParticipantsResponse(participants));
+                return ResponseEntity.badRequest().body(res);
+            }
+
             return sessionService.startSession(uuid)
+                    .map(updatedSession -> ResponseEntity.ok(buildSessionResponse(updatedSession, participants)))
+                    .orElse(ResponseEntity.notFound().build());
+        } catch (ObjectOptimisticLockingFailureException e) {
+            Map<String, Object> res = new HashMap<>();
+            res.put("error", "Session was updated concurrently. Please retry.");
+            return ResponseEntity.status(409).body(res);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    @PostMapping("/{sessionId}/finish")
+    public ResponseEntity<Map<String, Object>> finishSession(@PathVariable String sessionId) {
+        try {
+            UUID uuid = UUID.fromString(sessionId);
+
+            return sessionService.finishSession(uuid)
                     .map(updatedSession -> {
                         List<Participant> participants = sessionService.getParticipants(uuid);
                         return ResponseEntity.ok(buildSessionResponse(updatedSession, participants));

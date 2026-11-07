@@ -145,11 +145,37 @@ class SessionServiceImplTest {
     }
 
     @Test
-    void removeParticipantDelegatesToRepository() {
+    void removeParticipantDeletesParticipantAndReturnsIt() {
+        UUID sessionId = UUID.randomUUID();
         UUID participantId = UUID.randomUUID();
+        Session session = Session.builder().id(sessionId).build();
+        Participant participant = Participant.builder().id(participantId).session(session).name("Alice").build();
 
-        sessionService.removeParticipant(participantId);
+        when(participantRepository.findById(participantId)).thenReturn(Optional.of(participant));
 
+        Optional<Participant> removed = sessionService.removeParticipant(participantId);
+
+        assertThat(removed).containsSame(participant);
         verify(participantRepository).deleteById(participantId);
+    }
+
+    @Test
+    void removeParticipantReturnsEmptyForUnknownParticipant() {
+        UUID participantId = UUID.randomUUID();
+        when(participantRepository.findById(participantId)).thenReturn(Optional.empty());
+
+        Optional<Participant> removed = sessionService.removeParticipant(participantId);
+
+        assertThat(removed).isEmpty();
+        verify(participantRepository, never()).deleteById(any(UUID.class));
+    }
+
+    @Test
+    void isNameTakenNormalizesNameAndDelegatesToRepository() {
+        UUID sessionId = UUID.randomUUID();
+        when(participantRepository.existsBySessionIdAndNameIgnoreCase(sessionId, "Alice"))
+                .thenReturn(true);
+
+        assertThat(sessionService.isNameTaken(sessionId, "  Alice  ")).isTrue();
     }
 }

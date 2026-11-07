@@ -6,6 +6,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,10 +21,16 @@ public class SessionServiceImpl implements SessionService {
 
     private final SessionRepository sessionRepository;
     private final ParticipantRepository participantRepository;
+    private SessionEventNotifier sessionEventNotifier;
 
     public SessionServiceImpl(SessionRepository sessionRepository, ParticipantRepository participantRepository) {
         this.sessionRepository = sessionRepository;
         this.participantRepository = participantRepository;
+    }
+
+    @Autowired(required = false)
+    public void setSessionEventNotifier(SessionEventNotifier sessionEventNotifier) {
+        this.sessionEventNotifier = sessionEventNotifier;
     }
 
     //Метод для создания сессии
@@ -78,6 +85,18 @@ public class SessionServiceImpl implements SessionService {
     public Optional<Session> startSession(UUID sessionId) {
         return sessionRepository.findById(sessionId).map(session -> {
             session.setVotingStarted(true);
+            session.setStatus(SessionStatus.VOTING);
+            session.setUpdatedAt(ZonedDateTime.now());
+            return sessionRepository.save(session);
+        });
+    }
+
+    @Override
+    @Transactional
+    public Optional<Session> finishSession(UUID sessionId) {
+        return sessionRepository.findById(sessionId).map(session -> {
+            session.setVotingStarted(false);
+            session.setStatus(SessionStatus.FINISHED);
             session.setUpdatedAt(ZonedDateTime.now());
             return sessionRepository.save(session);
         });
@@ -100,8 +119,16 @@ public class SessionServiceImpl implements SessionService {
                     .name(normalizedName)
                     .joinedAt(ZonedDateTime.now())
                     .build();
-            return participantRepository.save(participant);
+            Participant saved = participantRepository.save(participant);
+            notifyParticipantsChanged(sessionId);
+            return saved;
         }).orElse(null);
+    }
+
+    private void notifyParticipantsChanged(UUID sessionId) {
+        if (sessionEventNotifier != null) {
+            sessionEventNotifier.participantsChanged(sessionId);
+        }
     }
 
     @Override
@@ -111,15 +138,41 @@ public class SessionServiceImpl implements SessionService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public Optional<Participant> findByParticipantId(UUID participantId) {
+        return participantRepository.findById(participantId);
+    }
+
+    @Override
     @Transactional
-    public void removeParticipant(UUID participantId) {
+    public Optional<Participant> removeParticipant(UUID participantId) {
+        Optional<Participant> participant = participantRepository.findById(participantId);
+        if (participant.isEmpty()) {
+            return Optional.empty();
+        }
+        UUID sessionId = participant.get().getSession() == null
+                ? null
+                : participant.get().getSession().getId();
+        String participantName = participant.get().getName();
         participantRepository.deleteById(participantId);
+        if (sessionId != null) {
+            notifyParticipantsChanged(sessionId);
+            if (sessionEventNotifier != null) {
+                sessionEventNotifier.participantLeft(sessionId, participantId.toString(), participantName);
+            }
+        }
+        return participant;
+    }
+
+    public boolean isNameTaken(UUID sessionId, String participantName) {
+        String normalizedName = normalizeParticipantName(participantName);
+        return participantRepository.existsBySessionIdAndNameIgnoreCase(sessionId, normalizedName);
     }
 
     private String normalizeParticipantName(String participantName) {
         if (participantName == null) return "Guest";
-        String name = participantName.trim();
+        String name = participantName.trim().replaceAll("\\s+", " ");
         if (name.isEmpty()) return "Guest";
-        return name.length() > 50 ? name.substring(0, 50) : name;
+        return name.length() > 20 ? name.substring(0, 20) : name;
     }
 }

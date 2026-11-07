@@ -14,7 +14,10 @@ public interface SessionService {
     Session saveSession(Session session);
     Optional<Session> updateMovieIndex(UUID sessionId, int movieIndex);
     Optional<Session> startSession(UUID sessionId);
+    Optional<Session> finishSession(UUID sessionId);
     Participant addParticipant(UUID sessionId, String participantName);
     List<Participant> getParticipants(UUID sessionId);
-    void removeParticipant(UUID participantId);
+    Optional<Participant> findByParticipantId(UUID participantId);
+    Optional<Participant> removeParticipant(UUID participantId);
+    boolean isNameTaken(UUID sessionId, String participantName);
 }

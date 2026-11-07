@@ -13,4 +13,7 @@ import java.util.UUID;
 public interface ParticipantRepository extends JpaRepository<Participant, UUID> {
     @Query("select p from Participant p where p.session.id = :sessionId order by p.joinedAt asc")
     List<Participant> findAllBySessionId(@Param("sessionId") UUID sessionId);
+
+    @Query("select count(p) > 0 from Participant p where p.session.id = :sessionId and lower(p.name) = lower(:name)")
+    boolean existsBySessionIdAndNameIgnoreCase(@Param("sessionId") UUID sessionId, @Param("name") String name);
 }
