@@ -24,6 +24,10 @@ const state = {
     votingInitPromise: null,
     votingInitAttempts: 0,
     startRequestSent: false,
+    movieFetchIdx: null,
+    leaveSent: false,
+    participantsSig: null,
+    participantsPrevIds: [],
 };
 
 function getDefaultWsUrl() {
@@ -33,6 +37,206 @@ function getDefaultWsUrl() {
 function el(id) {
     return document.getElementById(id);
 }
+
+/* ═══════════════════════════════════════════════
+   НИКНЕЙМ: модалка перед входом в комнату
+   ═══════════════════════════════════════════════ */
+const NICK_KEY = 'tbcNickname';
+let nickContext = null;   // { sessionId, isHost, session }
+let nickTimer = null;
+let nickTaken = false;
+
+function getSavedNickname() {
+    try { return localStorage.getItem(NICK_KEY) || ''; } catch (e) { return ''; }
+}
+
+function openNicknameModal(ctx) {
+    const overlay = el('nickOverlay');
+    const input = el('nickInput');
+    if (!overlay || !input) return;
+
+    nickContext = ctx;
+    nickTaken = false;
+    input.value = getSavedNickname();
+    setNickError('');
+    setNickStatus('');
+    updateNickButton();
+    overlay.classList.remove('hidden');
+    scheduleNickCheck();
+    setTimeout(() => { try { input.focus(); } catch (e) {} }, 60);
+}
+
+function closeNicknameModal() {
+    const overlay = el('nickOverlay');
+    if (overlay) overlay.classList.add('hidden');
+    if (nickTimer) { clearTimeout(nickTimer); nickTimer = null; }
+    nickContext = null;
+    nickTaken = false;
+}
+
+function cancelNickname() {
+    closeNicknameModal();
+}
+
+function setNickError(msg) {
+    const node = el('nickError');
+    if (!node) return;
+    node.textContent = msg || '';
+    node.classList.toggle('hidden', !msg);
+}
+
+function setNickStatus(msg) {
+    const node = el('nickStatus');
+    if (!node) return;
+    node.textContent = msg || '';
+    node.classList.toggle('hidden', !msg);
+}
+
+function updateNickButton() {
+    const btn = el('nickConfirmBtn');
+    const input = el('nickInput');
+    if (!btn || !input) return;
+    const name = input.value.trim();
+    btn.disabled = nickTaken || name.length < 2;
+}
+
+function onNickInput() {
+    setNickError('');
+    setNickStatus('');
+    nickTaken = false;
+    updateNickButton();
+    scheduleNickCheck();
+}
+
+function scheduleNickCheck() {
+    if (nickTimer) { clearTimeout(nickTimer); nickTimer = null; }
+    const input = el('nickInput');
+    if (!input || !nickContext) return;
+    const name = input.value.trim();
+    if (name.length < 2) return;
+    nickTimer = setTimeout(() => {
+        nickTimer = null;
+        checkNameAvailable(nickContext.sessionId, name);
+    }, 400);
+}
+
+/* Проверка занятости ника (debounce 400 мс).
+   Fail-open: если эндпоинт недоступен — не блокируем вход,
+   страховкой служит 409/NAME_TAKEN на join. */
+async function fetchNameAvailable(sessionId, name) {
+    try {
+        const resp = await fetchWithTimeout(
+            `${state.sessionServiceUrl}/${encodeURIComponent(sessionId)}/name-available?name=${encodeURIComponent(name)}`,
+            {}, 6000
+        );
+        const data = await resp.json().catch(() => ({}));
+        return {
+            reachable: true,
+            available: data.available === true,
+            error: typeof data.error === 'string' ? data.error : ''
+        };
+    } catch (e) {
+        return { reachable: false, available: false, error: '' };
+    }
+}
+
+async function checkNameAvailable(sessionId, name) {
+    const input = el('nickInput');
+    if (!input || input.value.trim() !== name || !nickContext) return;
+
+    const result = await fetchNameAvailable(sessionId, name);
+    if (!result.reachable) return;
+
+    if (!nickContext || !input || input.value.trim() !== name) return;
+
+    if (result.available) {
+        nickTaken = false;
+        setNickError('');
+        setNickStatus('Ник свободен');
+    } else {
+        nickTaken = true;
+        setNickStatus('');
+        setNickError(result.error || 'Этот ник уже занят в зале — выберите другой');
+    }
+    updateNickButton();
+}
+
+async function confirmNickname() {
+    const input = el('nickInput');
+    const btn = el('nickConfirmBtn');
+    if (!nickContext || !input || !btn) return;
+
+    const name = (input.value || '').trim();
+
+    if (nickTaken) {
+        setNickError('Этот ник уже занят — выберите другой');
+        return;
+    }
+    if (name.length < 2) {
+        setNickError('Ник должен быть не короче 2 символов');
+        return;
+    }
+
+    btn.disabled = true;
+    const originalLabel = btn.textContent;
+    btn.textContent = 'Входим…';
+
+    /* Финальная проверка ника перед входом: пока пользователь думал,
+       имя мог занять кто-то другой. */
+    const ctxId = nickContext.sessionId;
+    const finalCheck = await fetchNameAvailable(ctxId, name);
+    if (finalCheck.reachable && !finalCheck.available) {
+        nickTaken = true;
+        setNickStatus('');
+        setNickError(finalCheck.error || 'Этот ник уже занят в зале — выберите другой');
+        btn.textContent = originalLabel;
+        updateNickButton();
+        return;
+    }
+
+    try {
+        const participant = await registerParticipant(nickContext.sessionId, nickContext.isHost, name);
+        try { localStorage.setItem(NICK_KEY, name); } catch (e) {}
+        const ctx = nickContext;
+        closeNicknameModal();
+        enterRoom(
+            ctx.session || { sessionId: ctx.sessionId },
+            participant,
+            ctx.isHost,
+            ctx.isHost ? 'Сессия создана' : 'Вы подключились к сессии'
+        );
+    } catch (err) {
+        console.error('Nickname join error:', err);
+        if (err && err.nameTaken) {
+            nickTaken = true;
+            setNickError(err.message);
+        } else {
+            setNickError(err.message || 'Не удалось войти. Попробуйте ещё раз.');
+        }
+        btn.textContent = originalLabel;
+        updateNickButton();
+    }
+}
+
+function initNicknameModal() {
+    const input = el('nickInput');
+    const confirmBtn = el('nickConfirmBtn');
+    const cancelBtn = el('nickCancelBtn');
+    if (!input || !confirmBtn || !cancelBtn) return;
+
+    input.addEventListener('input', onNickInput);
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') confirmNickname();
+    });
+    confirmBtn.addEventListener('click', confirmNickname);
+    cancelBtn.addEventListener('click', cancelNickname);
+    document.addEventListener('keydown', (e) => {
+        const overlay = el('nickOverlay');
+        if (overlay && !overlay.classList.contains('hidden') && e.key === 'Escape') cancelNickname();
+    });
+}
+
+/* ═══════════════════════════════════════════════ */
 
 function warmupBackends() {
     if (state.warmupPromise) {
@@ -67,29 +271,38 @@ function showToast(text) {
     }, 3000);
 }
 
-function generateParticipantId() {
-    return 'p_' + Math.random().toString(36).slice(2, 11);
-}
-
 function defaultParticipantName(isHost) {
     const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
     return isHost ? `Host-${suffix}` : `Guest-${suffix}`;
 }
 
-async function registerParticipant(sessionId, isHost) {
-    const participantName = defaultParticipantName(isHost);
+async function registerParticipant(sessionId, isHost, name) {
+    const participantName = (name && name.trim()) || defaultParticipantName(isHost);
     const response = await fetchWithTimeout(`${state.sessionServiceUrl}/${encodeURIComponent(sessionId)}/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: participantName })
     }, 15000);
 
-    if (!response.ok) {
-        const txt = await response.text().catch(() => '');
-        throw new Error(`HTTP ${response.status}${txt ? `: ${txt}` : ''}`);
+    if (response.ok) {
+        return response.json();
     }
 
-    return response.json();
+    /* Разбираем тело ошибки: 409 / NAME_TAKEN и любые тексты */
+    let errBody = {};
+    try { errBody = await response.json(); } catch (e) { /* тело не JSON */ }
+
+    const code = String(errBody.error || errBody.code || '').toUpperCase();
+    if (response.status === 409 || code.indexOf('NAME_TAKEN') !== -1) {
+        const err = new Error('Этот ник уже занят в зале — выберите другой');
+        err.nameTaken = true;
+        throw err;
+    }
+
+    const msg = (typeof errBody.message === 'string' && errBody.message) ||
+        (typeof errBody.error === 'string' && errBody.error) ||
+        `HTTP ${response.status}`;
+    throw new Error(msg);
 }
 
 function persistParticipantState() {
@@ -122,6 +335,11 @@ function upsertCurrentParticipant(joinedAt = null) {
 }
 
 function clearParticipantState() {
+    try {
+        sessionStorage.removeItem('yakTabSession');
+        sessionStorage.removeItem('yakUnloading');
+        sessionStorage.removeItem('yakUnloadSession');
+    } catch (e) {}
     localStorage.removeItem('participantId');
     localStorage.removeItem('sessionId');
     localStorage.removeItem('participantName');
@@ -260,6 +478,33 @@ async function resolveSessionFromInput(rawValue) {
     throw new Error('Сессия не найдена');
 }
 
+/* ── Общий вход в комнату после успешной регистрации ── */
+function enterRoom(session, participant, isHost, toastText) {
+    state.sessionId = session.sessionId;
+    state.sessionCode = session.code;
+    state.isHost = isHost;
+    state.participantId = participant.participantId;
+    state.participantName = participant.name;
+    state.currentMovieIndex = Number.isInteger(session.currentMovieIndex) ? session.currentMovieIndex : 0;
+    state.voted = false;
+    state.votedDecision = null;
+    state.participantVotes = {};
+    state.roundResolved = false;
+    state.leaveSent = false;
+    state.movieFetchIdx = null;
+    state.participantsSig = null;
+    state.participantsPrevIds = [];
+    try { sessionStorage.setItem('yakTabSession', state.sessionId); } catch (e) {}
+
+    persistParticipantState();
+    upsertCurrentParticipant(participant.joinedAt || null);
+
+    showWaitingScreen();
+    connectWebSocket();
+
+    if (toastText) showToast(toastText);
+}
+
 async function createSession() {
     if (state.isCreating) return;
 
@@ -284,26 +529,12 @@ async function createSession() {
         }
 
         const data = await response.json();
-        const participant = await registerParticipant(data.sessionId, true);
-
-        state.sessionId = data.sessionId;
-        state.sessionCode = data.code;
-        state.isHost = true;
-        state.participantId = participant.participantId;
-        state.participantName = participant.name;
-        state.currentMovieIndex = Number.isInteger(data.currentMovieIndex) ? data.currentMovieIndex : 0;
-        state.voted = false;
-        state.votedDecision = null;
-        state.participantVotes = {};
-        state.roundResolved = false;
-
-        persistParticipantState();
-        upsertCurrentParticipant(participant.joinedAt);
-
-        showWaitingScreen();
-        connectWebSocket();
-        showToast('Сессия создана');
-
+        /* Сессия создана — теперь спрашиваем ник и входим */
+        openNicknameModal({
+            sessionId: data.sessionId,
+            isHost: true,
+            session: data
+        });
     } catch (error) {
         console.error('Create session error:', error);
         setError('createError', 'Не удалось создать сессию');
@@ -328,25 +559,12 @@ async function joinSession() {
 
     try {
         const session = await resolveSessionFromInput(link);
-        const participant = await registerParticipant(session.sessionId, false);
-
-        state.sessionId = session.sessionId;
-        state.sessionCode = session.code;
-        state.isHost = false;
-        state.participantId = participant.participantId;
-        state.participantName = participant.name;
-        state.currentMovieIndex = Number.isInteger(session.currentMovieIndex) ? session.currentMovieIndex : 0;
-        state.voted = false;
-        state.votedDecision = null;
-        state.participantVotes = {};
-        state.roundResolved = false;
-
-        persistParticipantState();
-        upsertCurrentParticipant(participant.joinedAt);
-
-        showWaitingScreen();
-        connectWebSocket();
-        showToast('Вы подключились к сессии');
+        /* Сессия найдена — спрашиваем ник (с проверкой занятости) и входим */
+        openNicknameModal({
+            sessionId: session.sessionId,
+            isHost: false,
+            session: session
+        });
     } catch (error) {
         console.error('Join error:', error);
         setError('joinError', 'Не удалось подключиться');
@@ -359,25 +577,14 @@ async function joinSessionDirect() {
         if (!token) return;
 
         const session = await resolveSessionFromInput(token);
-        const existingParticipant = state.participantId && state.sessionId === session.sessionId;
-        const participant = existingParticipant ? null : await registerParticipant(session.sessionId, false);
 
-        state.sessionId = session.sessionId;
-        state.sessionCode = session.code;
-        state.isHost = existingParticipant ? state.isHost : false;
-        state.participantId = existingParticipant ? state.participantId : participant.participantId;
-        state.participantName = existingParticipant ? state.participantName : participant.name;
-        state.currentMovieIndex = Number.isInteger(session.currentMovieIndex) ? session.currentMovieIndex : 0;
-        state.voted = false;
-        state.votedDecision = null;
-        state.participantVotes = {};
-        state.roundResolved = false;
-
-        persistParticipantState();
-        upsertCurrentParticipant(existingParticipant ? null : participant.joinedAt);
-
-        showWaitingScreen();
-        connectWebSocket();
+        /* Ник спрашиваем у всех, кто открыл ссылку в этой вкладке.
+           Сохранённый ник лишь подставляется в поле. */
+        openNicknameModal({
+            sessionId: session.sessionId,
+            isHost: false,
+            session: session
+        });
     } catch (err) {
         console.error('joinSessionDirect err', err);
         showToast('Не удалось присоединиться');
@@ -398,9 +605,9 @@ async function loadParticipants() {
         updateParticipantsList();
 
         if (data.votingStarted === true
-                && (!state.votingStarted || state.voted)
-                && Number.isInteger(data.currentMovieIndex)
-                && data.currentMovieIndex !== state.currentMovieIndex) {
+            && (!state.votingStarted || state.voted)
+            && Number.isInteger(data.currentMovieIndex)
+            && data.currentMovieIndex !== state.currentMovieIndex) {
             applyMovieIndexUpdate(data.currentMovieIndex);
         }
 
@@ -415,36 +622,71 @@ async function loadParticipants() {
     }
 }
 
+function participantsSignature() {
+    const list = state.participants || [];
+    return list
+        .map(p => `${p.id}|${p.name || ''}|${p.joinedAt || ''}`)
+        .join(';') + `#${state.participantId || ''}`;
+}
+
 function updateParticipantsList() {
     const listEl = el('participantsList');
     if (!listEl) return;
+
+    /* Опрос идёт каждые 2 секунды, а данные обычно те же.
+       Без этой проверки список перерисовывался бы и мигал. */
+    const signature = participantsSignature();
+    if (signature === state.participantsSig && listEl.childElementCount > 0) {
+        return;
+    }
+    state.participantsSig = signature;
+
+    const previousIds = state.participantsPrevIds || [];
+    const isNewcomer = (id) => previousIds.indexOf(id) === -1;
+    state.participantsPrevIds = (state.participants || []).map(p => p.id);
+    let newIndex = 0;
 
     listEl.replaceChildren();
 
     if (!state.participants || state.participants.length === 0) {
         const empty = document.createElement('p');
-        empty.style.cssText = 'color:#999; text-align:center; margin:0;';
-        empty.textContent = 'Участники ещё не отображаются';
+        empty.className = 'seats-empty';
+        empty.textContent = 'Пока пусто — ждём гостей…';
         listEl.appendChild(empty);
         return;
     }
 
-    state.participants.forEach(p => {
+    state.participants.forEach((p, i) => {
         const row = document.createElement('div');
-        row.style.cssText = 'padding:8px 0; color:#ddd; font-size:0.95em; border-bottom:1px solid rgba(255,255,255,0.05);';
+        if (isNewcomer(p.id)) {
+            row.className = 'seat-plaque plaque-new';
+            row.style.setProperty('--i', newIndex++);
+        } else {
+            row.className = 'seat-plaque';
+        }
 
-        const isMe = p.id === state.participantId ? ' ★' : '';
-        row.append((p.name || 'Участник') + isMe);
+        const bulb = document.createElement('span');
+        bulb.className = 'plaque-bulb';
+
+        const name = document.createElement('span');
+        name.className = 'plaque-name';
+        name.textContent = (p.name || 'Участник') + (p.id === state.participantId ? ' — это вы' : '');
+
+        row.append(bulb, name);
 
         const time = formatJoinedAt(p.joinedAt);
         if (time) {
             const t = document.createElement('span');
-            t.style.cssText = 'color:#666; font-size:0.85em; margin-left:6px;';
-            t.textContent = '@ ' + time;
+            t.className = 'plaque-time';
+            t.textContent = time;
             row.appendChild(t);
         }
         listEl.appendChild(row);
     });
+
+    if (typeof window.renderSeatMap === 'function') {
+        window.renderSeatMap();
+    }
 }
 
 function connectWebSocket() {
@@ -502,6 +744,20 @@ function connectWebSocket() {
             state.stompClient.subscribe(`/topic/session/${state.sessionId}/participants`, () => {
                 loadParticipants();
             });
+
+            /* Уведомление о вышедшем участнике */
+            state.stompClient.subscribe(`/topic/session/${state.sessionId}/left`, (msg) => {
+                try {
+                    const p = JSON.parse(msg.body);
+                    if (p && p.participantId !== state.participantId && p.participantName) {
+                        showToast(`${p.participantName} вышел из комнаты`);
+                    }
+                    loadParticipants();
+                } catch (e) {
+                    console.warn('left subscription parse error', e);
+                }
+            });
+
             state.stompClient.subscribe(`/topic/session/${state.sessionId}/errors`, (msg) => {
                 try {
                     const p = JSON.parse(msg.body);
@@ -527,6 +783,7 @@ function applyMovieIndexUpdate(movieIndex) {
     state.voted = false;
     state.votedDecision = null;
     state.roundResolved = false;
+    state.movieFetchIdx = null;
     setVotingNotice('Голосование активно');
     renderStatusRow();
     loadCurrentMovie();
@@ -652,7 +909,6 @@ async function startVoting() {
         return;
     }
 
-
     if (state.startRequestSent || state.votingStarted) {
         return;
     }
@@ -681,36 +937,7 @@ async function startVoting() {
 
 async function initVoting() {
     try {
-        return initVotingReliable();
-        if (!resp.ok) throw new Error(`Ошибка загрузки фильмов (${resp.status})`);
-
-        if (Array.isArray(warmedMovies) && warmedMovies.length > 0) {
-            state.movies = warmedMovies;
-        }
-
-        if (!Array.isArray(state.movies) || state.movies.length === 0) {
-            throw new Error('Нет доступных фильмов');
-        }
-
-        state.voted = false;
-        state.votedDecision = null;
-        state.participantVotes = {};
-        state.roundResolved = false;
-
-        loadCurrentMovie();
-        showVotingScreen();
-
-        const codeNode = el('votingSessionCode');
-        if (codeNode) codeNode.textContent = state.sessionCode || '—';
-
-        const notice = el('votingNotice');
-        if (notice) notice.textContent = 'Голосование началось!';
-
-        const yesBtn = el('yesBtn');
-        const noBtn = el('noBtn');
-        if (yesBtn) yesBtn.disabled = false;
-        if (noBtn) noBtn.disabled = false;
-
+        await initVotingReliable();
     } catch (err) {
         console.error('initVoting err', err);
         showToast(err.message || 'Ошибка загрузки фильмов');
@@ -779,6 +1006,7 @@ function vote(decision) {
     setVoteButtonsDisabled(true);
     setVotingNotice('Ждём остальных участников…');
     renderStatusRow();
+    showVoteStamp(decision);
 
     try {
         state.stompClient.send('/app/vote', {}, JSON.stringify({
@@ -793,38 +1021,106 @@ function vote(decision) {
     }
 }
 
-
-
-
-function loadCurrentMovie() {
-    const movie = state.movies[state.currentMovieIndex];
-    if (!movie) {
-        const movieTitle = el('movieTitle');
-        const moviePoster = el('moviePoster');
-        if (movieTitle) movieTitle.textContent = 'Фильм не найден';
-        if (moviePoster) moviePoster.src = '';
-        return;
-    }
-
+function renderMovie(movie) {
     const movieTitle = el('movieTitle');
     const movieMeta = el('movieMeta');
-    const movieCounter = el('movieCounter');
     const moviePoster = el('moviePoster');
+    const posterWrap = el('posterWrap');
     const yesBtn = el('yesBtn');
     const noBtn = el('noBtn');
 
     if (movieTitle) movieTitle.textContent = movie.title || 'Без названия';
-    if (movieMeta) movieMeta.textContent = movie.overview || 'Описание отсутствует';
-    if (movieCounter) movieCounter.textContent = `Фильм ${state.currentMovieIndex + 1} из ${state.movies.length}`;
+    if (movieMeta) {
+        movieMeta.textContent = movie.overview || 'Описание отсутствует';
+        movieMeta.scrollTop = 0;
+    }
     if (moviePoster) {
         moviePoster.src = movie.posterPath
             ? `https://image.tmdb.org/t/p/w500${movie.posterPath}`
             : 'https://via.placeholder.com/340x510?text=No+Image';
         moviePoster.alt = movie.title || 'Poster';
     }
-
+    if (posterWrap) {
+        posterWrap.classList.remove('flip');
+        void posterWrap.offsetWidth;
+        posterWrap.classList.add('flip');
+    }
+    removeVoteStamp();
     if (yesBtn) yesBtn.disabled = false;
     if (noBtn) noBtn.disabled = false;
+
+    if (typeof window.updateProgress === 'function') window.updateProgress();
+    if (typeof window.applyMovieExtras === 'function') window.applyMovieExtras();
+}
+
+function showMovieLoading() {
+    const movieTitle = el('movieTitle');
+    if (movieTitle) movieTitle.textContent = 'Загружаем следующий фильм…';
+}
+
+function showMovieMissing() {
+    const movieTitle = el('movieTitle');
+    const moviePoster = el('moviePoster');
+    if (movieTitle) movieTitle.textContent = 'Фильм не найден';
+    if (moviePoster) moviePoster.src = '';
+}
+
+function loadCurrentMovie() {
+    const idx = state.currentMovieIndex;
+    const movie = state.movies && state.movies[idx];
+
+    if (movie) {
+        renderMovie(movie);
+        return;
+    }
+
+    /* Индекс за пределами загруженного каталога — догружаем точечно */
+    if (idx === null || idx === undefined || idx < 0) {
+        showMovieMissing();
+        return;
+    }
+    if (state.movieFetchIdx === idx) return; /* этот индекс уже грузим */
+    state.movieFetchIdx = idx;
+    showMovieLoading();
+
+    fetchWithTimeout(`${state.votingServiceUrl}/movies/${idx}`, {}, 20000)
+        .then(r => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.json();
+        })
+        .then(m => {
+            if (state.currentMovieIndex !== idx) return; /* фильм уже сменился */
+            if (!m) throw new Error('Пустой ответ');
+            if (!Array.isArray(state.movies)) state.movies = [];
+            state.movies[idx] = m;
+            state.movieFetchIdx = null;
+            renderMovie(m);
+        })
+        .catch(err => {
+            console.warn('loadCurrentMovie lazy load error:', err);
+            if (state.currentMovieIndex === idx) {
+                state.movieFetchIdx = null;
+                showMovieMissing();
+            }
+        });
+}
+
+function showVoteStamp(decision) {
+    const wrap = el('posterWrap');
+    if (!wrap) return;
+    removeVoteStamp();
+    const stamp = document.createElement('div');
+    stamp.className = 'stamp ' + (decision === 'LIKE' ? 'stamp-like' : 'stamp-dislike');
+    const label = document.createElement('span');
+    label.textContent = decision === 'LIKE' ? 'Нравится!' : 'Не нравится!';
+    stamp.appendChild(label);
+    wrap.appendChild(stamp);
+}
+
+function removeVoteStamp() {
+    const wrap = el('posterWrap');
+    if (!wrap) return;
+    wrap.querySelectorAll('.stamp').forEach(n => n.remove());
 }
 
 function showMatchScreen(match) {
@@ -866,6 +1162,7 @@ function unlockVoting(message) {
     delete state.participantVotes[state.participantId];
     setVoteButtonsDisabled(false);
     setVotingNotice('Голосование активно');
+    removeVoteStamp();
     renderStatusRow();
     if (message) showToast(message);
 }
@@ -957,6 +1254,71 @@ function pasteFromClipboard() {
     });
 }
 
+/* ── Выход из комнаты ──
+   navigator.sendBeacon не поддерживает DELETE (только POST),
+   поэтому используем fetch c keepalive: запрос дозавершится
+   даже при закрытии вкладки. */
+function leaveRoomRequest(sessionId, participantId) {
+    if (!sessionId || !participantId) return;
+    sendBeaconSafe(sessionId, participantId);
+}
+
+function sendLeaveBeacon() {
+    if (state.leaveSent) return;
+    if (!state.sessionId || !state.participantId) return;
+    sessionStorage.setItem('yakUnloading', '1');
+    sessionStorage.setItem('yakUnloadSession', state.sessionId);
+    sendBeaconSafe(state.sessionId, state.participantId);
+    state.leaveSent = true;
+}
+
+/* pagehide срабатывает и при перезагрузке страницы, поэтому
+   выход подтверждаем после загрузки: если вкладка вернулась —
+   снимаем отметку и остаёмся в сессии. */
+window.addEventListener('pagehide', sendLeaveBeacon);
+window.addEventListener('beforeunload', sendLeaveBeacon);
+
+function sendBeaconSafe(sessionId, participantId) {
+    const url = `${state.sessionServiceUrl}/${encodeURIComponent(sessionId)}/participants/${encodeURIComponent(participantId)}`;
+    try {
+        fetch(url, { method: 'DELETE', keepalive: true }).catch(() => {});
+    } catch (e) { /* ignore */ }
+}
+
+/* Возврат после перезагрузки/возврата из bfcache: участник уже удалён
+   на бэкенде, поэтому входим заново под сохранённым ником. */
+async function restoreAfterReload() {
+    const wasUnloading = sessionStorage.getItem('yakUnloading') === '1';
+    if (!wasUnloading) return false;
+
+    sessionStorage.removeItem('yakUnloading');
+    sessionStorage.removeItem('yakUnloadSession');
+
+    const sessionId = state.sessionId;
+    const name = state.participantName || getSavedNickname();
+    if (!sessionId || !name) {
+        clearParticipantState();
+        state.sessionId = null;
+        state.participantId = null;
+        return false;
+    }
+
+    try {
+        const session = await resolveSessionFromInput(sessionId);
+        const participant = await registerParticipant(sessionId, state.isHost, name);
+        state.leaveSent = false;
+        enterRoom(session, participant, state.isHost, null);
+        return true;
+    } catch (e) {
+        console.warn('restoreAfterReload failed:', e);
+        clearParticipantState();
+        state.sessionId = null;
+        state.participantId = null;
+        state.leaveSent = false;
+        return false;
+    }
+}
+
 function exitSession() {
     stopParticipantsPolling();
 
@@ -966,6 +1328,9 @@ function exitSession() {
         } catch {}
         state.connected = false;
     }
+
+    /* Сообщаем о выходе ДО очистки состояния */
+    sendLeaveBeacon();
 
     state.sessionId = null;
     state.sessionCode = null;
@@ -980,6 +1345,7 @@ function exitSession() {
     state.votingWarmupPromise = null;
     state.votingInitPromise = null;
     state.votingInitAttempts = 0;
+    state.movieFetchIdx = null;
     setStartButtonLoading(false);
 
     clearParticipantState();
@@ -992,48 +1358,62 @@ function goBackToWelcome() {
 }
 
 function playConfetti() {
-    const count = 30;
+    const colors = ['#f3d894', '#e0b45c', '#b98a3a', '#f6e7c6', '#a4263c'];
+    const count = 60;
     for (let i = 0; i < count; i++) {
         const c = document.createElement('div');
+        const w = 5 + Math.random() * 8;
         c.style.position = 'fixed';
-        c.style.top = '-10px';
+        c.style.top = '-12px';
         c.style.left = Math.random() * 100 + '%';
-        c.style.width = (6 + Math.random() * 10) + 'px';
-        c.style.height = (10 + Math.random() * 16) + 'px';
-        c.style.background = ['#6366f1', '#4f46e5', '#10b981', '#06b6d4', '#f97316'][Math.floor(Math.random() * 5)];
+        c.style.width = w + 'px';
+        c.style.height = (w * (1 + Math.random())) + 'px';
+        c.style.background = colors[Math.floor(Math.random() * colors.length)];
         c.style.opacity = 0.95;
-        c.style.borderRadius = '2px';
+        c.style.borderRadius = '1px';
         c.style.zIndex = 9999;
         c.style.pointerEvents = 'none';
-        c.style.transition = 'transform 2.4s ease, top 2.4s ease, opacity 2.4s ease';
+        c.style.transition = 'transform 2.8s cubic-bezier(.25,.6,.4,1), top 2.8s ease-in, opacity 2.8s ease';
         document.body.appendChild(c);
 
         setTimeout(() => {
-            c.style.top = (100 + Math.random() * 40) + 'vh';
-            c.style.transform = `translateX(${Math.random() * 60 - 30}vw) rotate(${Math.random() * 720}deg)`;
+            c.style.top = (100 + Math.random() * 30) + 'vh';
+            c.style.transform = `translateX(${Math.random() * 50 - 25}vw) rotate(${Math.random() * 900 - 450}deg)`;
             c.style.opacity = 0;
         }, 50);
 
-        setTimeout(() => c.remove(), 2600);
+        setTimeout(() => c.remove(), 3000);
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    initNicknameModal();
+
     const savedPid = localStorage.getItem('participantId');
     const savedSid = localStorage.getItem('sessionId');
     const savedParticipantName = localStorage.getItem('participantName');
     const savedIsHost = localStorage.getItem('isHost') === 'true';
 
-    if (savedPid && savedSid) {
+    /* Личность восстанавливаем только в той вкладке, которая реально была
+       в этой комнате. Новая вкладка или чужая ссылка не должны давать
+       права хоста и подставлять чужое имя в список. */
+    let tabSession = null;
+    try { tabSession = sessionStorage.getItem('yakTabSession'); } catch (e) {}
+
+    if (savedPid && savedSid && tabSession === savedSid) {
         state.participantId = savedPid;
         state.sessionId = savedSid;
         state.participantName = savedParticipantName;
         state.isHost = savedIsHost;
     }
 
-    checkUrlParams();
     switchTab('join');
     warmupBackends().catch(() => {});
+
+    const restored = await restoreAfterReload();
+    if (!restored) {
+        checkUrlParams();
+    }
 });
 
 function checkUrlParams() {
@@ -1049,7 +1429,7 @@ function renderStatusRow() {
     const row = el('statusRow');
     if (!row) return;
 
-    row.innerHTML = '';
+    row.replaceChildren();
 
     if (!state.participants || state.participants.length === 0) {
         row.textContent = 'Статус голосов обновляется...';
@@ -1058,11 +1438,16 @@ function renderStatusRow() {
 
     state.participants.forEach(p => {
         const div = document.createElement('div');
-        div.className = 'status-item';
-        const voted = state.participantVotes[p.id];
-        div.textContent = (p.id === state.participantId)
-            ? 'Вы: ' + (voted ? 'Проголосовал' : 'Ожидает')
-            : (voted ? 'Проголосовал' : 'Ожидает');
+        const voted = Boolean(state.participantVotes[p.id]);
+        div.className = 'status-item' + (voted ? ' voted' : '');
+
+        const dot = document.createElement('span');
+        dot.className = 'status-dot';
+
+        const label = document.createElement('span');
+        label.textContent = (p.id === state.participantId ? 'Вы — ' : '') + (voted ? 'голос принят' : 'думает…');
+
+        div.append(dot, label);
         row.appendChild(div);
     });
 }

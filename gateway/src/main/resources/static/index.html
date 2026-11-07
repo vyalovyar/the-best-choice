@@ -3,274 +3,534 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <meta http-equiv="Content-Security-Policy" content="connect-src 'self' https: wss:; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline';">
+    <meta http-equiv="Content-Security-Policy" content="connect-src 'self' https: wss:; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com;">
     <title>The Best Choice — Совместный выбор фильма</title>
+    <meta name="theme-color" content="#0e090b">
+    <meta property="og:title" content="The Best Choice — выберите фильм вместе">
+    <meta property="og:description" content="Создайте сессию, отправьте ссылку, листайте фильмы. Совпадение покажет, что смотреть вечером.">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230e090b'/%3E%3Crect x='9' y='21' width='46' height='22' rx='4' fill='%23e0b45c'/%3E%3Ccircle cx='9' cy='32' r='3.2' fill='%230e090b'/%3E%3Ccircle cx='55' cy='32' r='3.2' fill='%230e090b'/%3E%3Cline x1='21' y1='23' x2='21' y2='41' stroke='%230e090b' stroke-width='2' stroke-dasharray='3 3'/%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        html,body { height: 100%; }
-        body {
-            font-family: Inter, "Segoe UI", Roboto, system-ui, -apple-system, "Helvetica Neue", Arial;
-            background: linear-gradient(180deg, #071028 0%, #0b1220 100%);
-            color: #e6eef8;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 24px;
-            -webkit-font-smoothing:antialiased;
-            -moz-osx-font-smoothing:grayscale;
+        :root{
+            --ink:#f4ecd9; --ink-dim:#c9b795; --muted:#9d8a68;
+            --gold:#e0b45c; --gold-soft:#f3d894; --gold-deep:#b98a3a;
+            --line:rgba(255,215,150,.14);
         }
-        .container { width: 100%; max-width: 980px; margin: 0 auto; }
-        .screen {
-            display: none;
-            width: 100%;
-            border-radius: 14px;
-            background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
-            box-shadow: 0 10px 40px rgba(2,6,23,0.6);
-            padding: 28px;
-            transition: transform .28s cubic-bezier(.2,.9,.2,1), opacity .28s ease;
-        }
-        .movie-overview { max-height: 240px; overflow-y: auto; line-height: 1.5; padding-right: 8px; }
-        .screen.active { display: block; transform: translateY(0); opacity: 1; }
-        .dark-card { background: linear-gradient(180deg,#0f172a,#0b1220); border: 1px solid rgba(255,255,255,0.03); }
-        h1, h2, h3 { margin-bottom: 12px; font-weight: 600; color: #e6eef8; }
-        p { color: #b8c7d9; margin-bottom: 12px; }
-        .welcome-inner { display: grid; grid-template-columns: 1fr 360px; gap: 28px; align-items: center; }
-        .brand { display:flex; flex-direction:column; gap:6px; }
-        .brand-title { font-size: 28px; letter-spacing: -0.4px; color: #e6eef8; }
-        .brand-sub { color: #9fb0cc; font-size: 14px; }
-        .tabs { display:flex; gap: 10px; margin-top: 18px; }
-        .tab-btn {
-            padding: 10px 14px;
-            border-radius: 10px;
-            background: rgba(255,255,255,0.02);
-            border: 1px solid rgba(255,255,255,0.02);
-            color: #d7e6fb;
-            cursor:pointer;
-            font-weight:600;
-            transition: all .18s ease;
-        }
-        .tab-btn.active {
-            background: linear-gradient(90deg,#4f46e5,#6366f1);
-            color: #fff;
-            box-shadow: 0 8px 24px rgba(79,70,229,0.16);
-            transform: translateY(-2px);
-        }
-        .panel {
-            background: rgba(255,255,255,0.02);
-            padding: 18px;
-            border-radius: 12px;
-            border: 1px solid rgba(255,255,255,0.02);
-        }
-        label { display:block; font-size:13px; color:#b8c7d9; margin-bottom:8px; font-weight:600; }
-        input[type="text"] {
-            width: 100%;
-            padding: 12px 14px;
-            border-radius: 10px;
-            border: 1px solid rgba(255,255,255,0.04);
-            background: rgba(255,255,255,0.02);
-            color: #e6eef8;
-            font-size: 14px;
-            outline: none;
-        }
-        input[type="text"]:focus {
-            box-shadow: 0 6px 24px rgba(83, 92, 230, 0.12);
-            border-color: rgba(99,102,241,0.8);
-        }
-        .actions { display:flex; gap:12px; margin-top: 14px; }
-        .btn {
-            padding: 12px 16px;
-            border-radius: 10px;
-            cursor: pointer;
-            font-weight: 700;
-            border: none;
-            transition: transform .12s ease, box-shadow .12s ease, opacity .12s ease;
-        }
-        .btn:disabled { opacity:.6; cursor:not-allowed; transform:none; box-shadow:none; }
-        .btn-primary {
-            background: linear-gradient(90deg,#4f46e5,#6366f1);
-            color: #fff;
-            box-shadow: 0 8px 28px rgba(79,70,229,0.14);
-        }
-        .btn-ghost {
-            background: transparent;
-            color: #cfe0ff;
-            border: 1px solid rgba(255,255,255,0.04);
-        }
-        .error { color: #ffb4b4; margin-top:10px; font-size:13px; }
-        .waiting-grid { display:grid; grid-template-columns: 1fr 320px; gap: 20px; align-items: start; }
-        .session-code {
-            padding: 12px;
-            background: rgba(255,255,255,0.02);
-            border-radius: 10px;
-            border: 1px solid rgba(255,255,255,0.02);
-            font-weight:700;
-            color:#e6eef8;
+        *{box-sizing:border-box;margin:0;padding:0}
+        html,body{height:100%}
+        ::selection{background:rgba(224,180,92,.35)}
+        body{
+            font-family:Manrope,"Segoe UI",Roboto,system-ui,sans-serif;
+            color:var(--ink);
+            background:
+                    radial-gradient(1100px 520px at 50% -8%, rgba(255,196,120,.09), transparent 62%),
+                    radial-gradient(900px 480px at 50% 118%, rgba(120,30,40,.12), transparent 60%),
+                    linear-gradient(180deg,#0e090b 0%,#080509 55%,#060409 100%);
+            min-height:100vh;min-height:100svh;
             display:flex;
-            justify-content:space-between;
-            align-items:center;
+            padding:clamp(18px,4vh,40px) clamp(14px,3vw,32px) clamp(250px,30vh,335px);
+            -webkit-font-smoothing:antialiased;
         }
-        .session-code strong { letter-spacing:3px; font-size:18px; }
-        .voting-wrap { display:flex; gap:28px; align-items:flex-start; }
-        .poster {
-            width:340px; height:510px; border-radius:12px; overflow:hidden;
-            background: linear-gradient(180deg,#0b1220,#071028);
-            border:1px solid rgba(255,255,255,0.04);
-            box-shadow: 0 16px 40px rgba(2,6,23,0.6);
+
+        /* ═══ СВЕТ ЗАЛА (статичный) ═══ */
+        .ambient{position:fixed;inset:0;z-index:0;pointer-events:none;
+            background:
+                    radial-gradient(60% 50% at 50% 40%, rgba(255,214,150,.08), rgba(255,214,150,.02) 46%, transparent 70%),
+                    radial-gradient(34% 26% at 50% 38%, rgba(255,228,180,.07), transparent 72%);}
+        .floor{position:fixed;left:0;right:0;bottom:0;height:26vh;z-index:0;pointer-events:none;
+            background:radial-gradient(60% 100% at 50% 0%, rgba(255,196,120,.06), transparent 70%)}
+
+        .grain{position:fixed;inset:-60%;width:220%;height:220%;z-index:3;pointer-events:none;opacity:.04;
+            background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
+            animation:grainShift .9s steps(5) infinite;}
+        @keyframes grainShift{0%,100%{transform:translate(0,0)}20%{transform:translate(-1.5%,1%)}40%{transform:translate(1%,-1.5%)}60%{transform:translate(-1%,1.5%)}80%{transform:translate(1.5%,1%)}}
+
+        /* ═══ СТЕНЫ ПО КРАЯМ (затемнение) ═══ */
+        .wall{position:fixed;top:0;bottom:0;width:clamp(26px,5.5vw,92px);z-index:0;pointer-events:none}
+        .wall-l{left:0;background:linear-gradient(90deg,#0d0812 0%,#0a060d 60%,rgba(10,6,13,0) 100%)}
+        .wall-r{right:0;background:linear-gradient(270deg,#0d0812 0%,#0a060d 60%,rgba(10,6,13,0) 100%)}
+
+        /* ═══ КРЕСЛА ═══ */
+        .seats{position:fixed;left:0;right:0;bottom:0;z-index:1;pointer-events:none;
+            display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:12px;
+            padding:0 18px 10px;
+            -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 30%);
+            mask-image:linear-gradient(180deg,transparent 0,#000 30%);}
+        .seat-row{display:flex;justify-content:center;align-items:flex-end}
+        .row-back{--h:38px;width:min(72%,880px);gap:8px;opacity:.38}
+        .row-mid{--h:56px;width:min(86%,1060px);gap:10px;opacity:.62}
+        .row-front{--h:82px;width:min(100%,1240px);gap:12px}
+        .aisle{display:block;flex:none}
+        .row-back .aisle{width:14px}
+        .row-mid .aisle{width:18px}
+        .row-front .aisle{width:24px}
+
+        .seat{position:relative;display:block;flex:1;min-width:0;height:var(--h)}
+        .s-back{position:absolute;left:9%;right:9%;top:0;bottom:7%;
+            border-radius:11px 11px 7px 7px / 18px 18px 7px 7px;
+            background:
+                    radial-gradient(130% 55% at 50% 0%, rgba(255,205,140,.14), transparent 55%),
+                    repeating-linear-gradient(90deg, rgba(0,0,0,.20) 0 2px, rgba(255,220,180,.05) 2px 3px, transparent 3px 12px),
+                    linear-gradient(180deg,#a83a52 0%,#8a2440 30%,#65182c 62%,#47101f 100%);
+            box-shadow:
+                    inset 0 3px 4px rgba(255,205,140,.25),
+                    inset -4px 0 8px rgba(0,0,0,.35),
+                    inset 0 -10px 14px rgba(0,0,0,.42),
+                    0 8px 14px rgba(0,0,0,.5)}
+        .s-back::before{content:"";position:absolute;left:7%;right:7%;top:24%;height:2px;border-radius:2px;
+            background:linear-gradient(90deg,transparent,rgba(0,0,0,.35) 20%,rgba(0,0,0,.35) 80%,transparent);
+            box-shadow:0 1px 0 rgba(255,205,140,.08)}
+        .s-arm{position:absolute;top:34%;bottom:0;width:11%;border-radius:6px 6px 4px 4px;
+            background:linear-gradient(180deg,#3a0f1d 0%,#240812 55%,#17040b 100%);
+            box-shadow:inset 0 2px 2px rgba(255,200,130,.12),inset 0 -4px 6px rgba(0,0,0,.5),0 4px 8px rgba(0,0,0,.45)}
+        .s-arm.l{left:0}
+        .s-arm.r{right:0}
+        .seat::after{content:"";position:absolute;left:2%;right:2%;bottom:-6px;height:8px;border-radius:50%;
+            background:radial-gradient(50% 50% at 50% 50%,rgba(0,0,0,.5),transparent 70%)}
+
+        /* ═══ ЭКРАН ═══ */
+        .container{width:100%;max-width:1040px;margin:auto;position:relative;z-index:2}
+        .screen-frame{position:relative;border-radius:22px;padding:12px;
+            background:linear-gradient(180deg,#191014 0%,#0d080b 100%);
+            border:1px solid rgba(255,200,120,.16);
+            box-shadow:0 30px 80px rgba(0,0,0,.7),0 0 90px rgba(255,190,110,.06),inset 0 1px 0 rgba(255,225,170,.08)}
+
+        /* обводка из бегущих лампочек по периметру рамки */
+        .screen-frame::before{
+            content:"";position:absolute;inset:7px;border-radius:16px;pointer-events:none;z-index:2;
+            background-image:
+                    radial-gradient(circle,#ffe9b4 2.1px,rgba(255,228,161,.16) 2.9px,transparent 3.7px),
+                    radial-gradient(circle,#ffe9b4 2.1px,rgba(255,228,161,.16) 2.9px,transparent 3.7px),
+                    radial-gradient(circle,#ffe9b4 2.1px,rgba(255,228,161,.16) 2.9px,transparent 3.7px),
+                    radial-gradient(circle,#ffe9b4 2.1px,rgba(255,228,161,.16) 2.9px,transparent 3.7px);
+            background-size:26px 8px,26px 8px,8px 26px,8px 26px;
+            background-repeat:repeat-x,repeat-x,repeat-y,repeat-y;
+            background-position:0 0,0 100%,0 0,100% 0;
+            animation:bulbChase 1.6s linear infinite;
+            opacity:.9}
+        @keyframes bulbChase{
+            to{background-position:26px 0,26px 100%,0 26px,100% 26px}}
+
+        .brass{height:2px;border-radius:2px;margin:4px 4px 14px;
+            background:linear-gradient(90deg,transparent,rgba(224,180,92,.5) 18%,rgba(243,216,148,.6) 50%,rgba(224,180,92,.5) 82%,transparent)}
+
+        .screen-surface{position:relative;border-radius:14px;border:1px solid rgba(255,220,160,.10);overflow:hidden;
+            background:
+                    radial-gradient(130% 100% at 50% 0%, rgba(255,226,178,.08), rgba(255,226,178,.02) 46%, rgba(0,0,0,.25) 100%),
+                    linear-gradient(180deg,#1a1114 0%,#120b0e 100%);}
+        .screen-surface::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;
+            box-shadow:inset 0 0 90px rgba(0,0,0,.5)}
+
+        .screen{display:none;padding:26px;position:relative;z-index:1}
+        .screen.active{display:block;animation:projectorOn .6s ease-out}
+        @keyframes projectorOn{
+            0%{opacity:0;filter:brightness(2.4)}
+            18%{opacity:.7;filter:brightness(1.5)}
+            30%{opacity:.45;filter:brightness(2)}
+            48%{opacity:.95;filter:brightness(1.15)}
+            100%{opacity:1;filter:brightness(1)}}
+        .hidden{display:none!important}
+
+        /* ═══ ЗАГОЛОВОК С МИГАЮЩЕЙ БУКВОЙ ═══ */
+        .dim-letter{display:inline-block;animation:letterFault 11s linear infinite}
+        @keyframes letterFault{
+            0%,82%{opacity:1}
+            83%{opacity:.15}
+            84.5%{opacity:.9}
+            86%{opacity:.2}
+            88%{opacity:1}
+            89.5%{opacity:.3}
+            91%,100%{opacity:1}}
+
+        /* ═══ ТИПОГРАФИКА / ОБЩЕЕ ═══ */
+        h2{font-family:Oswald;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;
+            font-size:clamp(22px,3vw,28px);color:var(--ink)}
+        h2::after{content:"";display:block;width:56px;height:3px;border-radius:2px;margin-top:8px;
+            background:linear-gradient(90deg,var(--gold),transparent)}
+        h3{font-family:Oswald;font-size:15px;font-weight:600;letter-spacing:2px;text-transform:uppercase;
+            color:var(--gold-soft);margin-bottom:10px}
+        p{color:var(--ink-dim)}
+        .muted{color:var(--ink-dim);font-size:14px}
+        .small{font-size:12px;color:var(--muted)}
+        .kicker{font-family:Oswald;font-size:12px;letter-spacing:4px;color:var(--gold);text-transform:uppercase}
+        .error{color:#ff9d9d;font-size:13px;margin-top:10px}
+        .screen-head{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;
+            border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:20px}
+        .code-chip{font-family:Oswald;letter-spacing:3px;color:var(--gold-soft)}
+
+        label{display:block;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;
+            color:var(--muted);margin-bottom:8px;font-weight:800}
+        input[type="text"]{width:100%;padding:13px 14px;border-radius:10px;border:1px solid var(--line);
+            background:rgba(0,0,0,.35);color:var(--ink);font-size:14px;font-family:inherit;outline:none;
+            transition:border-color .2s,box-shadow .2s}
+        input[type="text"]::placeholder{color:#7c6c4f}
+        input[type="text"]:focus{border-color:rgba(224,180,92,.6);box-shadow:0 0 0 3px rgba(224,180,92,.10)}
+
+        .panel{background:linear-gradient(180deg,rgba(255,215,150,.05),rgba(255,215,150,.015));
+            border:1px solid var(--line);border-radius:14px;padding:18px 20px}
+
+        /* ═══ КНОПКИ ═══ */
+        .btn{font-family:Manrope;font-weight:800;letter-spacing:.4px;border-radius:12px;padding:13px 20px;cursor:pointer;
+            border:1px solid rgba(255,210,140,.25);color:var(--ink);
+            background:linear-gradient(180deg,#241417,#170d10);
+            position:relative;overflow:hidden;transition:transform .15s,box-shadow .2s,border-color .2s}
+        .btn::after{content:"";position:absolute;top:0;bottom:0;left:-60%;width:40%;
+            background:linear-gradient(105deg,transparent,rgba(255,240,210,.15),transparent);
+            transform:skewX(-18deg);transition:left .5s ease}
+        .btn:hover{transform:translateY(-2px);border-color:rgba(255,210,140,.5);box-shadow:0 10px 30px rgba(0,0,0,.5)}
+        .btn:hover::after{left:120%}
+        .btn:active{transform:translateY(0) scale(.98)}
+        .btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
+        .btn-primary{background:linear-gradient(180deg,#f0c268,#c8963e);color:#22150a;border-color:#f7dba0;
+            box-shadow:0 6px 24px rgba(224,180,92,.22),inset 0 1px 0 rgba(255,255,255,.5)}
+        .btn-ghost{background:transparent}
+        .actions{display:flex;gap:12px;margin-top:14px;flex-wrap:wrap}
+
+        /* ═══ WELCOME ═══ */
+        .kicker-line{display:flex;align-items:center;gap:14px;margin-bottom:18px;
+            font-family:Oswald;font-size:12px;letter-spacing:5px;color:var(--gold);text-transform:uppercase}
+        .kicker-line::before,.kicker-line::after{content:"";flex:1;height:1px}
+        .kicker-line::before{background:linear-gradient(90deg,transparent,rgba(224,180,92,.4))}
+        .kicker-line::after{background:linear-gradient(90deg,rgba(224,180,92,.4),transparent)}
+
+        .brand{max-width:560px}
+        .brand-title{font-family:Oswald;font-weight:700;text-transform:uppercase;letter-spacing:3px;line-height:1.05;
+            font-size:clamp(36px,5vw,56px);color:#f2e5c9;text-shadow:0 2px 0 rgba(0,0,0,.35)}
+        .brand-sub{color:var(--ink-dim);font-size:15px;max-width:52ch;margin-top:12px}
+
+        .tabs{display:flex;gap:10px;margin:22px 0 14px;flex-wrap:wrap}
+        .tab-btn{padding:11px 18px;border-radius:10px;background:transparent;border:1px solid var(--line);
+            color:var(--ink-dim);font-family:Oswald;font-size:14px;letter-spacing:2px;text-transform:uppercase;
+            cursor:pointer;transition:all .2s}
+        .tab-btn:hover{color:var(--gold-soft);border-color:rgba(224,180,92,.4)}
+        .tab-btn.active{background:linear-gradient(180deg,rgba(224,180,92,.16),rgba(224,180,92,.05));
+            color:var(--gold-soft);border-color:rgba(224,180,92,.55)}
+
+        #joinPanel,#createPanel{max-width:460px}
+
+        .steps-inline{display:flex;flex-wrap:wrap;gap:8px 24px;margin-top:26px;padding-top:16px;
+            border-top:1px solid var(--line);color:var(--muted);font-size:13px}
+        .steps-inline b{font-family:Oswald;color:var(--gold-soft);font-weight:600;margin-right:6px}
+
+        /* ═══ НИКНЕЙМ (модалка перед входом) ═══ */
+        .nick-overlay{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;
+            padding:16px;background:rgba(5,3,6,.74);backdrop-filter:blur(3px);animation:nickFade .25s ease}
+        @keyframes nickFade{from{opacity:0}to{opacity:1}}
+        .nick-card{width:min(420px,94vw);border-radius:16px;padding:22px 24px;text-align:left;
+            background:linear-gradient(180deg,#1c1216,#120b0e);
+            border:1px solid rgba(224,180,92,.35);
+            box-shadow:0 30px 80px rgba(0,0,0,.7)}
+        .nick-status{font-size:13px;margin-top:8px}
+        .nick-status.ok{color:#7ee2a8}
+
+        /* ═══ WAITING ═══ */
+        .ticket-block{border:1px dashed rgba(224,180,92,.45);border-radius:14px;padding:16px;margin-bottom:20px;
+            background:linear-gradient(180deg,rgba(224,180,92,.06),rgba(224,180,92,.02))}
+        .ticket-label{font-family:Oswald;font-size:12px;letter-spacing:4px;color:var(--gold);text-transform:uppercase;margin-bottom:10px}
+        .ticket-row{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+        .ticket-code{font-family:Oswald;font-size:18px;letter-spacing:2px;color:var(--ink-dim)}
+        .ticket-code strong{font-family:Oswald;font-size:22px;letter-spacing:5px;color:var(--gold-soft)}
+        #inviteLink{margin-top:12px;background:#efe3c8;color:#3c2b12;border:1px dashed #b98a3a;
+            font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+            box-shadow:0 10px 26px rgba(0,0,0,.35),inset 0 2px 0 rgba(255,255,255,.6)}
+        .waiting-grid{display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:start}
+        .sub-label{font-family:Oswald;font-size:12px;letter-spacing:3px;color:var(--gold);text-transform:uppercase;margin-bottom:10px}
+        .mini-map{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+        .mm-seat{width:24px;height:19px;border-radius:6px 6px 3px 3px;
+            border:1px solid rgba(255,210,140,.2);background:rgba(255,210,140,.03);transition:all .3s}
+        .mm-seat.taken{background:linear-gradient(180deg,#e9c27b,#c8963e);border-color:#f3d894;
+            box-shadow:0 0 10px rgba(224,180,92,.35)}
+        .plaque-list{display:flex;flex-direction:column;gap:8px;min-height:60px}
+        .seat-plaque{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;
+            background:linear-gradient(180deg,rgba(255,210,140,.06),rgba(255,210,140,.02));
+            border:1px solid rgba(255,210,140,.12)}
+        .seat-plaque.plaque-new{animation:plaqueIn .4s both;animation-delay:calc(var(--i)*.06s)}
+        @keyframes plaqueIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+        .plaque-bulb{flex:none;width:8px;height:8px;border-radius:50%;background:#e9c27b;
+            box-shadow:0 0 7px 1px rgba(255,200,110,.4)}
+        .plaque-name{font-weight:600;color:var(--ink);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .plaque-time{color:var(--muted);font-size:12px}
+        .seats-empty{color:var(--muted);text-align:center;padding:14px;font-size:14px}
+        .waiting-actions{display:flex;gap:10px;flex-wrap:wrap}
+
+        /* ═══ VOTING ═══ */
+        .progress{height:3px;border-radius:99px;background:rgba(255,215,150,.10);overflow:hidden;margin:-8px 0 18px}
+        .progress i{display:block;height:100%;width:0;border-radius:99px;
+            background:linear-gradient(90deg,var(--gold-deep),var(--gold-soft));transition:width .5s ease}
+
+        .voting-wrap{display:flex;gap:28px;margin-top:4px}
+        .poster{width:300px;aspect-ratio:2/3;flex:none;border-radius:14px;overflow:hidden;position:relative;
+            border:1px solid rgba(224,180,92,.35);background:#0d0a0c;perspective:1100px;
+            box-shadow:0 24px 60px rgba(0,0,0,.65)}
+        .poster img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .4s ease}
+        .poster:hover img{transform:scale(1.02)}
+        .poster.flip img{animation:posterFlip .65s cubic-bezier(.4,0,.2,1)}
+        @keyframes posterFlip{0%{transform:rotateY(0)}45%{transform:rotateY(90deg);filter:brightness(.15)}
+            55%{transform:rotateY(90deg);filter:brightness(.15)}100%{transform:rotateY(0);filter:brightness(1)}}
+
+        .voting-right{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px}
+        .movie-title{font-family:Oswald;font-weight:600;font-size:clamp(22px,3vw,28px);letter-spacing:.5px;line-height:1.15;color:var(--ink)}
+        .movie-extras{display:flex;gap:8px;flex-wrap:wrap}
+        .chip{display:none;align-items:center;gap:5px;padding:5px 12px;border-radius:99px;
+            border:1px solid rgba(224,180,92,.35);font-family:Oswald;font-size:13px;letter-spacing:1.5px;
+            text-transform:uppercase;color:var(--gold-soft);background:rgba(224,180,92,.06)}
+        .chip.show{display:inline-flex}
+        .chip .star{color:var(--gold)}
+        .movie-meta{color:var(--ink-dim);font-size:14px}
+        .movie-overview{max-height:240px;overflow-y:auto;line-height:1.55;padding-right:8px}
+        .movie-overview::-webkit-scrollbar{width:6px}
+        .movie-overview::-webkit-scrollbar-thumb{background:rgba(224,180,92,.3);border-radius:3px}
+
+        .stamp{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:2}
+        .stamp span{font-family:Oswald;font-size:clamp(30px,4vw,44px);letter-spacing:6px;text-transform:uppercase;
+            padding:8px 24px;border:4px solid currentColor;border-radius:12px;transform:rotate(var(--rot,-12deg));
+            background:rgba(0,0,0,.4);animation:stampIn .5s cubic-bezier(.2,1.4,.3,1) both}
+        .stamp-like span{color:#7ee2a8;--rot:-12deg}
+        .stamp-dislike span{color:#ff9d9d;--rot:8deg;font-size:clamp(20px,3vw,30px);letter-spacing:4px;padding:8px 14px}
+        @keyframes stampIn{0%{transform:scale(2.4) rotate(var(--rot));opacity:0}
+            55%{transform:scale(.94) rotate(var(--rot));opacity:1}
+            75%{transform:scale(1.05) rotate(var(--rot))}
+            100%{transform:scale(1) rotate(var(--rot));opacity:1}}
+
+        .vote-row{display:flex;gap:12px;margin-top:14px}
+        .vote-btn{flex:1;padding:15px 8px;border-radius:14px;font-family:Oswald;font-size:18px;letter-spacing:2px;
+            text-transform:uppercase;border:none;cursor:pointer;transition:transform .12s,filter .2s,opacity .2s}
+        .vote-btn.like{background:linear-gradient(180deg,#3fae74,#2c7d52);color:#08130c;
+            box-shadow:0 8px 26px rgba(63,174,116,.25),inset 0 1px 0 rgba(255,255,255,.35)}
+        .vote-btn.dislike{background:linear-gradient(180deg,#d45454,#a13a3a);color:#fff;
+            box-shadow:0 8px 26px rgba(212,84,84,.22),inset 0 1px 0 rgba(255,255,255,.25)}
+        .vote-btn:hover:not(:disabled){transform:translateY(-2px);filter:brightness(1.07)}
+        .vote-btn:active:not(:disabled){transform:scale(.97)}
+        .vote-btn:disabled{opacity:.5;cursor:not-allowed}
+        .status-row{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+        .status-item{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-dim)}
+        .status-dot{flex:none;width:8px;height:8px;border-radius:50%;background:#6b5a3c;transition:background .3s,box-shadow .3s}
+        .status-item.voted{color:var(--ink)}
+        .status-item.voted .status-dot{background:#58c98b;box-shadow:0 0 8px rgba(88,201,139,.7)}
+
+        /* ═══ MATCH ═══ */
+        .match-screen{text-align:center;padding-bottom:34px}
+        .match-head{font-family:Oswald;font-size:clamp(28px,4vw,36px);letter-spacing:2px;text-transform:uppercase;
+            color:var(--gold-soft)}
+        .match-head::after{display:none}
+        .match-sub{color:var(--ink-dim);margin-top:8px}
+        .match-marquee{display:inline-block;margin-top:22px;padding:12px;border-radius:20px;overflow:hidden;
+            background-color:#150e10;
+            background-image:radial-gradient(circle,#ffd98a 2.6px,rgba(255,217,138,.14) 3.4px,transparent 4.2px);
+            background-size:22px 22px;
+            box-shadow:0 0 44px rgba(255,200,110,.15),0 30px 70px rgba(0,0,0,.6);
+            animation:marqueeIn .7s .2s both}
+        @keyframes marqueeIn{from{opacity:0;transform:translateY(14px) scale(.94)}to{opacity:1;transform:none}}
+        .curtain-reveal{position:relative;border-radius:12px;overflow:hidden;background:#0b0709;
+            border:1px solid rgba(224,180,92,.25)}
+        .match-frame{position:relative;width:min(300px,62vw);aspect-ratio:2/3;overflow:hidden;margin:0 auto}
+        .match-frame::before{content:"";position:absolute;inset:-70%;z-index:0;
+            background:conic-gradient(from 0deg,transparent 0 38%,rgba(255,224,160,.15) 47%,rgba(255,224,160,.05) 52%,transparent 62%);
+            animation:sweep 5.5s linear infinite}
+        @keyframes sweep{to{transform:rotate(1turn)}}
+        .match-frame img{position:relative;z-index:1;width:100%;height:100%;object-fit:cover;display:block}
+        .rc{position:absolute;top:0;bottom:0;width:55%;z-index:3;
+            background:repeating-linear-gradient(90deg,#5d1524 0 14px,#8e2434 14px 26px,#a32a41 26px 34px,#6d1a2c 34px 48px);
+            box-shadow:inset 0 0 34px rgba(0,0,0,.65)}
+        .rc-l{left:0;border-right:4px solid #caa04f;border-radius:0 12px 12px 0}
+        .rc-r{right:0;border-left:4px solid #caa04f;border-radius:12px 0 0 12px}
+        .match-screen.active .rc-l{animation:openL 1.2s .5s cubic-bezier(.77,0,.18,1) forwards}
+        .match-screen.active .rc-r{animation:openR 1.2s .5s cubic-bezier(.77,0,.18,1) forwards}
+        @keyframes openL{to{transform:translateX(-102%)}}
+        @keyframes openR{to{transform:translateX(102%)}}
+        .match-title{font-family:Oswald;font-size:clamp(24px,4vw,32px);letter-spacing:1px;color:#f6e7c6;margin-top:20px}
+        .match-actions{display:flex;gap:12px;justify-content:center;margin-top:20px;flex-wrap:wrap}
+
+        /* ═══ TOAST ═══ */
+        .toast{position:fixed;left:50%;top:-90px;transform:translateX(-50%);z-index:99999;
+            min-width:220px;max-width:90vw;text-align:center;padding:13px 26px;border-radius:12px;
+            background:linear-gradient(180deg,#241417,#150c0f);border:1px solid rgba(224,180,92,.4);
+            color:#f6e7c6;font-weight:600;font-size:14px;
+            box-shadow:0 14px 40px rgba(0,0,0,.6);
+            transition:top .4s cubic-bezier(.2,1.2,.3,1),opacity .25s ease;opacity:0}
+        .toast.visible{top:20px;opacity:1}
+
+        /* ═══ АДАПТИВ ═══ */
+        @media (max-width:920px){
+            .waiting-grid{grid-template-columns:1fr}
+            .voting-wrap{flex-direction:column}
+            .poster{width:min(320px,100%);margin:0 auto}
+            .screen{padding:18px}
+            .screen-frame{padding:8px;border-radius:16px}
+            .screen-frame::before{inset:4px;border-radius:14px;
+                background-size:22px 7px,22px 7px,7px 22px,7px 22px}
         }
-        .poster img { width:100%; height:100%; object-fit:cover; display:block; }
-        .voting-right { flex:1; display:flex; flex-direction:column; gap:12px; }
-        .movie-title { font-size:22px; font-weight:800; color:#e6eef8; }
-        .movie-meta { color:#9fb0cc; font-size:14px; }
-        .vote-row { display:flex; gap:12px; margin-top:18px; }
-        .vote-btn { flex:1; padding:14px; border-radius:12px; font-weight:800; font-size:16px; border:none; cursor:pointer; }
-        .vote-btn.like { background: linear-gradient(90deg,#059669,#10b981); color:#071028; }
-        .vote-btn.dislike { background: linear-gradient(90deg,#ef4444,#fb7185); color:#fff; }
-        .vote-btn:disabled { opacity:.6; cursor:not-allowed; }
-        .match-poster { width:260px; height:390px; border-radius:12px; overflow:hidden; border: 4px solid #10b981; margin-bottom:12px; }
-        .match-title { font-size:26px; color:#10b981; font-weight:900; }
-        .toast {
-            position: fixed;
-            left: 50%;
-            top: -80px;
-            transform: translateX(-50%);
-            min-width: 220px;
-            padding: 12px 20px;
-            border-radius: 10px;
-            background: linear-gradient(90deg,#4f46e5,#6366f1);
-            color: #fff;
-            box-shadow: 0 10px 30px rgba(99,102,241,0.16);
-            z-index: 99999;
-            transition: top .36s ease, opacity .18s ease;
-            opacity: 0;
+        @media (max-width:640px){
+            .wall{width:14px}
         }
-        .toast.visible { top: 22px; opacity: 1; }
-        .muted { color:#9fb0cc; font-size:13px; }
-        .hidden { display:none !important; }
-        @media (max-width: 920px) {
-            .welcome-inner, .waiting-grid { grid-template-columns: 1fr; }
-            .poster { width:100%; height:420px; }
-            .session-code { flex-wrap: wrap; gap: 10px; }
-            #copyInviteBtn { margin-left: 0 !important; width: 100%; }
-            .voting-wrap { flex-direction: column; }
-            .poster { width: 100%; }
+        @media (max-width:560px){
+            body{padding-bottom:210px}
+            .row-back{--h:30px}
+            .row-mid{--h:44px}
+            .row-front{--h:60px}
+            .ticket-row{flex-direction:column;align-items:flex-start}
+            .match-frame{width:min(260px,70vw)}
+        }
+        @media (prefers-reduced-motion:reduce){
+            *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+            .rc{display:none!important}
         }
     </style>
 </head>
 <body>
+<!-- Декорации зала -->
+<div class="ambient" aria-hidden="true"></div>
+<div class="floor" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+<div class="wall wall-l" aria-hidden="true"></div>
+<div class="wall wall-r" aria-hidden="true"></div>
+<div class="seats" aria-hidden="true">
+    <div class="seat-row row-back"></div>
+    <div class="seat-row row-mid"></div>
+    <div class="seat-row row-front"></div>
+</div>
+
 <div class="container">
-    <!-- WELCOME SCREEN -->
-    <div id="welcomeScreen" class="screen active dark-card">
-        <div class="welcome-inner">
-            <div>
+    <div class="screen-frame">
+        <div class="brass" aria-hidden="true"></div>
+
+        <div class="screen-surface">
+            <!-- WELCOME -->
+            <div id="welcomeScreen" class="screen active">
+                <div class="kicker-line">Выбираем кино вместе</div>
                 <div class="brand">
-                    <div class="brand-title">The Best Choice</div>
-                    <div class="brand-sub">Совместный выбор фильма</div>
-                </div>
-                <div style="margin-top:18px;">
+                    <h1 class="brand-title">The Bes<span class="dim-letter">t</span> Choice</h1>
+                    <p class="brand-sub">Помогаем двоим выбрать фильм для вечера: листайте каталог, отмечайте «Нравится» и «Не нравится» — совпадение покажет, что посмотреть.</p>
                     <div class="tabs">
                         <button id="tabJoin" class="tab-btn active" onclick="switchTab('join')">Присоединиться</button>
                         <button id="tabCreate" class="tab-btn" onclick="switchTab('create')">Создать</button>
                     </div>
-                    <div id="joinPanel" class="panel" style="margin-top:12px;">
-                        <label for="sessionLink">Ссылка сессии</label>
-                        <input id="sessionLink" type="text" placeholder="https://example.com/?session=..." />
-                        <div class="actions" style="margin-top:12px;">
+                    <div id="joinPanel" class="panel">
+                        <label for="sessionLink">Ссылка или код сессии</label>
+                        <input id="sessionLink" type="text" placeholder="Вставьте ссылку-приглашение" />
+                        <div class="actions">
                             <button id="joinBtn" class="btn btn-primary" onclick="joinSession()">Присоединиться</button>
                         </div>
                         <div id="joinError" class="error hidden"></div>
                     </div>
-                    <div id="createPanel" class="panel hidden" style="margin-top:12px;">
-                        <p class="muted">Создайте новую приватную сессию для друзей.</p>
+                    <div id="createPanel" class="panel hidden">
+                        <p class="muted" style="margin-bottom:14px;">Создайте сессию и отправьте ссылку другу. Голосование начнётся, когда вы оба будете в зале.</p>
                         <div class="actions">
                             <button id="createBtn" class="btn btn-primary" onclick="createSession()">Создать сессию</button>
-                            <button class="btn btn-ghost" onclick="goBackToWelcome()">Отмена</button>
                         </div>
                         <div id="createError" class="error hidden"></div>
                     </div>
                 </div>
-            </div>
-            <div>
-                <div class="panel">
-                    <h3>Инструкция</h3>
-                    <p class="muted">Создайте сессию → Поделитесь ссылкой с другом → Начните голосование → Выбирайте фильмы вместе!</p>
-                </div>
-            </div>
-        </div>
-    </div>
 
-    <!-- WAITING SCREEN -->
-    <div id="waitingScreen" class="screen dark-card">
-        <h2>Комната ожидания</h2>
-        <div class="session-code" style="margin-bottom: 14px;">
-            Поделитесь ссылкой:
-            <button id="copyInviteBtn" class="btn btn-ghost" style="margin-left: auto;" onclick="copyToClipboard(this)">Копировать ссылку</button>
-        </div>
-        <div style="margin-bottom: 14px;">
-            <input id="inviteLink" type="text" readonly style="width: 100%;" />
-        </div>
-        <div class="waiting-grid">
-            <div>
-                <div style="margin-top:14px;">
-                    <div class="muted">Участники комнаты:</div>
-                    <div id="participantsList" style="margin-top:12px; background: rgba(255,255,255,0.02); border-radius: 10px; padding: 12px; border: 1px solid rgba(255,255,255,0.02); min-height: 80px;"></div>
+                <div class="steps-inline">
+                    <span><b>1</b> Создайте сессию</span>
+                    <span><b>2</b> Отправьте ссылку другу</span>
+                    <span><b>3</b> Листайте фильмы: «Нравится» / «Не нравится»</span>
+                    <span><b>4</b> Совпали — фильм выбран</span>
                 </div>
             </div>
-            <div>
-                <div class="panel">
-                    <h3>Действия</h3>
-                    <div class="muted" style="margin-bottom:12px;">Готовы начать?</div>
-                    <div class="waiting-actions">
-                        <button id="startBtn" class="btn btn-primary" onclick="startVoting()">Начать выбор</button>
-                        <button class="btn btn-ghost" onclick="goBackToWelcome()">Вернуться</button>
+
+            <!-- WAITING -->
+            <div id="waitingScreen" class="screen">
+                <div class="screen-head">
+                    <div><h2>Зал ожидания</h2></div>
+                    <div class="muted">Голосование начнётся, когда все соберутся</div>
+                </div>
+                <div class="ticket-block">
+                    <div class="ticket-label">Ваш билет</div>
+                    <div class="ticket-row">
+                        <div class="ticket-code">Код сессии: <strong id="waitingCodeText">—</strong></div>
+                        <button id="copyInviteBtn" class="btn btn-ghost" onclick="copyToClipboard(this)">Копировать ссылку</button>
+                    </div>
+                    <input id="inviteLink" type="text" readonly />
+                    <div class="small" style="margin-top:8px;">Отправьте ссылку другу — он попадёт прямо в зал.</div>
+                </div>
+                <div class="waiting-grid">
+                    <div>
+                        <div class="sub-label">Уже в зале</div>
+                        <div id="seatMap" class="mini-map" aria-hidden="true"></div>
+                        <div id="participantsList" class="plaque-list"></div>
+                    </div>
+                    <div class="panel">
+                        <h3>Действия</h3>
+                        <p class="muted" style="margin-bottom:12px;">Готовы начать?</p>
+                        <div class="waiting-actions">
+                            <button id="startBtn" class="btn btn-primary" onclick="startVoting()">Начать выбор</button>
+                            <button class="btn btn-ghost" onclick="goBackToWelcome()">Вернуться</button>
+                        </div>
                     </div>
                 </div>
             </div>
+
+            <!-- VOTING -->
+            <div id="votingScreen" class="screen">
+                <div class="screen-head">
+                    <div><h2>Голосование</h2></div>
+                    <div class="muted">Сессия: <strong id="votingSessionCode" class="code-chip">—</strong></div>
+                </div>
+                <div class="progress"><i id="voteProgressBar"></i></div>
+                <div class="voting-wrap">
+                    <div class="poster" id="posterWrap">
+                        <img id="moviePoster" src="" alt="Постер" />
+                    </div>
+                    <div class="voting-right">
+                        <div class="kicker">Сейчас на экране</div>
+                        <div class="movie-title" id="movieTitle">Загрузка…</div>
+                        <div class="movie-extras">
+                            <span id="chipGenre" class="chip"></span>
+                            <span id="chipRating" class="chip"></span>
+                        </div>
+                        <div class="movie-meta muted movie-overview" id="movieMeta">Описание</div>
+                        <div class="vote-row">
+                            <button id="yesBtn" class="vote-btn like" onclick="vote('LIKE')">✓ Нравится</button>
+                            <button id="noBtn" class="vote-btn dislike" onclick="vote('DISLIKE')">✕ Не нравится</button>
+                        </div>
+                        <div id="votingNotice" class="muted">Голосование активно</div>
+                        <div id="statusRow" class="status-row"></div>
+                        <div style="margin-top:14px;">
+                            <button class="btn btn-ghost" onclick="exitSession()">Выйти из зала</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MATCH -->
+            <div id="matchScreen" class="screen match-screen">
+                <h2 id="matchTitle" class="match-head">Совпадение</h2>
+                <p class="match-sub">Вы выбрали один и тот же фильм — можно смотреть вместе!</p>
+                <div class="match-marquee">
+                    <div class="curtain-reveal">
+                        <div class="rc rc-l"></div>
+                        <div class="rc rc-r"></div>
+                        <div class="match-frame">
+                            <img id="matchPoster" src="" alt="Постер" />
+                        </div>
+                    </div>
+                </div>
+                <div class="match-title" id="matchMovieTitle">Фильм совпал</div>
+                <p class="muted" style="margin-top:6px;">Приятного просмотра!</p>
+                <div class="match-actions">
+                    <button class="btn btn-primary" onclick="exitSession()">Завершить</button>
+                </div>
+            </div>
         </div>
     </div>
+</div>
 
-    <!-- VOTING SCREEN -->
-    <div id="votingScreen" class="screen dark-card">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div>
-                <h2>Голосование</h2>
-                <div id="movieCounter" class="muted">Фильм 1 из 20</div>
-            </div>
-            <div class="muted">Сессия: <strong id="votingSessionCode">—</strong></div>
-        </div>
-        <div style="height:18px;"></div>
-        <div class="voting-wrap">
-            <div class="poster">
-                <img id="moviePoster" src="" alt="Постер" />
-            </div>
-            <div class="voting-right">
-                <div class="movie-title" id="movieTitle">Загрузка...</div>
-                <div class="movie-meta muted movie-overview" id="movieMeta">Описание</div>
-                <div class="vote-row">
-                    <button id="yesBtn" class="vote-btn like" onclick="vote('LIKE')">Да</button>
-                    <button id="noBtn" class="vote-btn dislike" onclick="vote('DISLIKE')">Нет</button>
-                </div>
-                <div id="votingNotice" class="muted" style="margin-top:8px;">Голосование активно</div>
-                <div id="statusRow" style="margin-top:12px; font-size:0.9em; color:#999;"></div>
-                <div style="margin-top:16px;">
-                    <button class="btn btn-ghost" onclick="exitSession()">Выйти</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- MATCH SCREEN -->
-    <div id="matchScreen" class="screen dark-card" style="text-align:center;">
-        <h2 id="matchTitle">Совпадение </h2>
-        <div style="height:12px;"></div>
-        <div class="match-poster">
-            <img id="matchPoster" src="" alt="Постер" style="width:100%; height:100%; object-fit:cover;">
-        </div>
-        <div style="height:8px;"></div>
-        <div class="match-title" id="matchMovieTitle">Фильм совпал</div>
-        <p class="muted">Вы оба выбрали этот фильм!</p>
-        <div style="display:flex; gap:10px; justify-content:center; margin-top:18px;">
-
-            <button class="btn btn-ghost" onclick="exitSession()">Завершить</button>
+<!-- НИКНЕЙМ: экран перед входом в комнату -->
+<div id="nickOverlay" class="nick-overlay hidden" aria-hidden="true">
+    <div class="nick-card" role="dialog" aria-modal="true">
+        <h3>Как вас представить?</h3>
+        <p class="muted" style="margin-bottom:14px;">Это имя увидят другие участники зала. Ник запомнится на будущее.</p>
+        <label for="nickInput">Никнейм</label>
+        <input id="nickInput" type="text" maxlength="20" placeholder="От 2 до 20 символов" autocomplete="off" />
+        <div id="nickStatus" class="nick-status ok hidden"></div>
+        <div id="nickError" class="error hidden"></div>
+        <div class="actions">
+            <button id="nickConfirmBtn" class="btn btn-primary">Войти в зал</button>
+            <button id="nickCancelBtn" class="btn btn-ghost">Отмена</button>
         </div>
     </div>
 </div>
@@ -280,7 +540,168 @@
 <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
 
+<script>
+    /* Кресла зала */
+    (function () {
+        function makeSeat() {
+            var s = document.createElement('i');
+            s.className = 'seat';
+            s.innerHTML = '<span class="s-back"></span><span class="s-arm l"></span><span class="s-arm r"></span>';
+            return s;
+        }
+        function buildRow(rowEl, count) {
+            if (!rowEl) return;
+            rowEl.innerHTML = '';
+            var midPoint = Math.floor(count / 2);
+            for (var i = 0; i < count; i++) {
+                rowEl.appendChild(makeSeat());
+                if (i === midPoint - 1) {
+                    var a = document.createElement('i');
+                    a.className = 'aisle';
+                    rowEl.appendChild(a);
+                }
+            }
+        }
+        function buildSeats() {
+            var w = Math.max(300, window.innerWidth - 40);
+            var front = Math.max(4, Math.min(10, Math.round(w / 120)));
+            buildRow(document.querySelector('.row-back'), front + 4);
+            buildRow(document.querySelector('.row-mid'), front + 2);
+            buildRow(document.querySelector('.row-front'), front);
+        }
+        var t;
+        window.addEventListener('resize', function () { clearTimeout(t); t = setTimeout(buildSeats, 150); });
+        buildSeats();
+    })();
+</script>
 
 <script src="/js/app.js"></script>
+
+<script>
+    /* ═══ Улучшения поверх app.js — сам app.js менять не нужно ═══ */
+    (function () {
+
+        /* ── Прогресс голосования (тонкая полоса, без цифр) ── */
+        function updateProgress() {
+            var bar = document.getElementById('voteProgressBar');
+            if (!bar) return;
+            var total = (state.movies && state.movies.length) || 0;
+            var idx = state.currentMovieIndex || 0;
+            bar.style.width = (total ? Math.min(100, ((idx + 1) / total) * 100) : 0).toFixed(1) + '%';
+        }
+
+        /* ═══════════════ GENRE-RATING MAPPING ═══════════════
+           Единственное место, где читаются жанр и рейтинг фильма.
+           Ожидаемые поля: "genre" (строка, русское название),
+           "rating" (число 0–10). Если назовёшь иначе — правь только здесь. */
+        function readMovieGenre(m) {
+            if (!m) return '';
+            if (typeof m.genre === 'string' && m.genre.trim()) return m.genre.trim();
+            if (typeof m.genreName === 'string' && m.genreName.trim()) return m.genreName.trim();
+            if (Array.isArray(m.genres)) {
+                var parts = m.genres.map(function (g) {
+                    if (typeof g === 'string') return g;
+                    return (g && g.name) ? g.name : '';
+                }).filter(Boolean);
+                if (parts.length) return parts.join(', ');
+            }
+            if (typeof m.category === 'string' && m.category.trim()) return m.category.trim();
+            return '';
+        }
+
+        function readMovieRating(m) {
+            if (!m) return null;
+            var candidates = [m.rating, m.voteAverage, m.vote_average, m.tmdbRating, m.imdbRating, m.score];
+            for (var i = 0; i < candidates.length; i++) {
+                var v = parseFloat(candidates[i]);
+                if (!isNaN(v) && v > 0) return v;
+            }
+            return null;
+        }
+
+        function applyMovieExtras() {
+            var gChip = document.getElementById('chipGenre');
+            var rChip = document.getElementById('chipRating');
+            if (!gChip || !rChip) return;
+            var m = state.movies && state.movies[state.currentMovieIndex];
+
+            var g = readMovieGenre(m);
+            gChip.textContent = g;
+            gChip.classList.toggle('show', Boolean(g));
+
+            var r = readMovieRating(m);
+            if (r !== null) {
+                rChip.innerHTML = '<span class="star">★</span>' + (r % 1 === 0 ? r : r.toFixed(1));
+                rChip.classList.add('show');
+            } else {
+                rChip.classList.remove('show');
+                rChip.innerHTML = '';
+            }
+        }
+        /* ═══════════ конец GENRE-RATING MAPPING ═══════════ */
+
+        /* ── Хуки для app.js: обновление жанра/рейтинга и прогресса
+              после каждой отрисовки фильма ── */
+        window.updateProgress = updateProgress;
+        window.applyMovieExtras = applyMovieExtras;
+
+        /* ── Мини-рассадка в зале ожидания ──
+           Только меняем классы/подсказки у существующих мест:
+           пересборка innerHTML каждый опрос давала мигание. */
+        function renderSeatMap() {
+            var map = document.getElementById('seatMap');
+            if (!map) return;
+            var taken = (state.participants && state.participants.length) || 0;
+            if (map.childElementCount !== 8) {
+                map.innerHTML = '';
+                for (var k = 0; k < 8; k++) map.appendChild(document.createElement('i'));
+            }
+            for (var i = 0; i < 8; i++) {
+                var seat = map.children[i];
+                var cls = 'mm-seat' + (i < taken ? ' taken' : '');
+                if (seat.className !== cls) seat.className = cls;
+                var p = state.participants && state.participants[i];
+                var title = (p && p.name) || 'Свободно';
+                if (seat.title !== title) seat.title = title;
+            }
+        }
+        window.renderSeatMap = renderSeatMap;
+
+        /* ── Свайпы (телефон) и клавиши (компьютер) ── */
+        (function () {
+            var wrap = document.getElementById('posterWrap');
+            if (!wrap) return;
+            var sx = 0, dx = 0, active = false;
+            wrap.addEventListener('touchstart', function (e) {
+                if (state.voted) return;
+                active = true; sx = e.touches[0].clientX; dx = 0;
+                wrap.style.transition = 'none';
+            }, { passive: true });
+            wrap.addEventListener('touchmove', function (e) {
+                if (!active) return;
+                dx = e.touches[0].clientX - sx;
+                wrap.style.transform = 'translateX(' + (dx * 0.35) + 'px) rotate(' + (dx * 0.02) + 'deg)';
+            }, { passive: true });
+            wrap.addEventListener('touchend', function () {
+                if (!active) return;
+                active = false;
+                wrap.style.transition = 'transform .3s ease';
+                wrap.style.transform = '';
+                if (Math.abs(dx) > 60 && state.votingStarted && !state.voted) {
+                    vote(dx > 0 ? 'LIKE' : 'DISLIKE');
+                }
+                dx = 0;
+            });
+            /* → или Y (русская Н) — Нравится; ← или N (русская Т) — Не нравится */
+            document.addEventListener('keydown', function (e) {
+                var vs = document.getElementById('votingScreen');
+                if (!vs || !vs.classList.contains('active') || state.voted || !state.votingStarted) return;
+                var k = e.key.toLowerCase();
+                if (e.key === 'ArrowRight' || k === 'y' || k === 'н') vote('LIKE');
+                if (e.key === 'ArrowLeft' || k === 'n' || k === 'т') vote('DISLIKE');
+            });
+        })();
+    })();
+</script>
 </body>
 </html>
