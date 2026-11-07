@@ -5,8 +5,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
+import java.util.List;
+
 @Data
-//Чтобы не вылетала ошибка ловим ток то, что нужно
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class TmdbMovieDto {
 
@@ -25,5 +26,7 @@ public class TmdbMovieDto {
     @JsonProperty("vote_average")
     private Double voteAverage;
 
+    @JsonProperty("genre_ids")
+    private List<Integer> genreIds;
 
 }

@@ -29,6 +29,12 @@ public class Movie {
     @Column
     private Double voteAvg;
 
+    @Column(length = 255)
+    private String genre;
+
+    @Column(name = "catalog_position")
+    private Long catalogPosition;
+
     @Column(nullable = false)
     private ZonedDateTime cacheAt;
 }

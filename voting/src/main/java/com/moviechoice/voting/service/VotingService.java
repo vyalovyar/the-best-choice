@@ -1,9 +1,7 @@
 package com.moviechoice.voting.service;
 
-import com.moviechoice.voting.client.TmdbClient;
+import com.moviechoice.voting.dto.MovieResponse;
 import com.moviechoice.voting.dto.VoteOutcome;
-import com.moviechoice.voting.dto.tmld.TmdbMovieDto;
-import com.moviechoice.voting.dto.tmld.TmdbMoviesResponseDto;
 import com.moviechoice.voting.entity.Movie;
 import com.moviechoice.voting.entity.Vote;
 import com.moviechoice.voting.entity.VoteDecision;
@@ -14,101 +12,70 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.ZonedDateTime;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class VotingService {
 
-    private final TmdbClient tmdbClient;
     private final MovieRepository movieRepository;
     private final VoteRepository voteRepository;
     private final RestTemplate restTemplate;
+    private final MovieCacheService movieCacheService;
+    private final CatalogService catalogService;
 
     @Value("${session.service.url:http://localhost:8081}")
     private String sessionServiceUrl;
 
+    private static final String SESSION_PARTICIPANTS_PATH = "/api/sessions/%s/participants";
     private static final String SESSION_UPDATE_INDEX_PATH = "/api/sessions/%s/update-index";
+    private static final String SESSION_FINISH_PATH = "/api/sessions/%s/finish";
 
     private final Object refreshLock = new Object();
-    private final Object lockStub = new Object();
-    private final java.util.concurrent.ConcurrentHashMap<UUID, Object> sessionLocks =
-            new java.util.concurrent.ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, Object> sessionLocks = new ConcurrentHashMap<>();
 
-
-    public List<Movie> getMoviesForVote() {
-        if (needsRefresh()) {
+    public List<Movie> loadMovies() {
+        if (movieRepository.count() == 0) {
             synchronized (refreshLock) {
-                if (needsRefresh()) {
-                    log.info("Кеш устарел, обновляем фильмы из TMDB");
-                    updateMoviesFromTmdb();
+                if (movieRepository.count() == 0) {
+                    log.info("Каталог пуст, загружаем фильмы из TMDB");
+                    movieCacheService.refreshMovies();
+                    movieCacheService.assignMissingPositions();
                 }
             }
         }
-        return movieRepository.findAll(Sort.by("id"));
+        return movieRepository.findAll(Sort.by("catalogPosition", "id"));
     }
 
-    // метод только проверяет, нужно ли обновлять
-    private boolean needsRefresh() {
-        if (movieRepository.count() == 0) {
-            return true;
+    public List<MovieResponse> getMoviesForVote() {
+        return loadMovies().stream().map(MovieResponse::from).toList();
+    }
+
+    public Optional<MovieResponse> getMovieAtIndex(int index) {
+        List<Long> ids = movieRepository.findAllIdsOrdered();
+        Long movieId = movieIdAt(ids, index);
+        if (movieId == null) {
+            return Optional.empty();
         }
-        ZonedDateTime oneDayAgo = ZonedDateTime.now().minusDays(1);
-        return movieRepository.findTopByOrderByCacheAtDesc()
-                .map(m -> m.getCacheAt().isBefore(oneDayAgo))
-                .orElse(true);
+        return movieRepository.findById(movieId).map(MovieResponse::from);
     }
 
     @Transactional
     public void updateMoviesFromTmdb() {
-        TmdbMoviesResponseDto responseDto = tmdbClient.getPopularMovies();
-
-        if (responseDto == null || responseDto.getResults() == null) {
-            log.warn("Пустой ответ от TMDB");
-            return;
-        }
-
-        int created = 0;
-        int updated = 0;
-
-        for (TmdbMovieDto dto : responseDto.getResults()) {
-            Optional<Movie> existingMovie = movieRepository.findById(dto.getId());
-
-            if (existingMovie.isPresent()) {
-                Movie movie = existingMovie.get();
-                movie.setTitle(dto.getTitle());
-                movie.setOverview(dto.getOverview());
-                movie.setVoteAvg(dto.getVoteAverage());
-                movie.setCacheAt(ZonedDateTime.now());
-                movie.setPosterPath(dto.getPosterPath());
-                movieRepository.save(movie);
-                updated++;
-            } else {
-                Movie movie = Movie.builder()
-                        .id(dto.getId())
-                        .title(dto.getTitle())
-                        .posterPath(dto.getPosterPath())
-                        .overview(dto.getOverview())
-                        .voteAvg(dto.getVoteAverage())
-                        .cacheAt(ZonedDateTime.now())
-                        .build();
-                movieRepository.save(movie);
-                created++;
-            }
-        }
-        log.info("Обновление фильмов завершено: создано={}, обновлено={}", created, updated);
+        movieCacheService.refreshMovies();
+        movieCacheService.assignMissingPositions();
     }
 
-    //Создание голоса
     @Transactional
     public Vote createVote(UUID sessionId, String participantId, Long movieId, VoteDecision decision) {
         Movie movie = movieRepository.findById(movieId)
@@ -127,15 +94,26 @@ public class VotingService {
         log.info("Голос сохранён: участник={}, фильм={}, решение={}", participantId, movieId, decision);
         return voteRepository.save(vote);
     }
+
     public VoteOutcome castVote(UUID sessionId, String participantId, Long movieId, VoteDecision decision) {
-        // один раунд сессии обрабатывается строго по очереди
         synchronized (sessionLocks.computeIfAbsent(sessionId, id -> new Object())) {
-            List<String> participants = getParticipantIds(sessionId);
+            SessionSnapshot snapshot = getSessionSnapshot(sessionId);
+            List<String> participants = snapshot.participants();
+
             if (participants.size() < 2) {
                 throw new IllegalStateException("Для голосования нужно минимум 2 участника");
             }
             if (!participants.contains(participantId)) {
                 throw new IllegalStateException("Участник не найден в сессии");
+            }
+
+            List<Long> ids = movieRepository.findAllIdsOrdered();
+            Long currentMovieId = movieIdAt(ids, snapshot.currentMovieIndex());
+            if (currentMovieId != null && !currentMovieId.equals(movieId)) {
+                String title = movieRepository.findById(currentMovieId).map(Movie::getTitle).orElse(null);
+                throw new StaleVoteException(title == null
+                        ? "Голос не принят: фильм уже сменился"
+                        : String.format("Голос не принят: фильм уже сменился (сейчас «%s»)", title));
             }
 
             Vote vote = createVote(sessionId, participantId, movieId, decision);
@@ -150,36 +128,74 @@ public class VotingService {
             voteRepository.deleteBySessionIdAndMovie_Id(sessionId, movieId);
 
             if (likes >= total) {
+                finishSession(sessionId);
                 return new VoteOutcome(vote, voted, total, VoteOutcome.Status.MATCH, null);
             }
 
-            List<Long> ids = movieRepository.findAllIdsOrdered();
-            int next = ids.isEmpty() ? 0 : (ids.indexOf(movieId) + 1) % ids.size();
-            updateMovieIndexInSession(sessionId, next);
+            int next = nextMovieIndex(snapshot.currentMovieIndex());
+            if (!updateMovieIndexInSession(sessionId, next)) {
+                throw new IllegalStateException("Не удалось переключить фильм, попробуйте ещё раз");
+            }
             return new VoteOutcome(vote, voted, total, VoteOutcome.Status.NEXT, next);
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private List<String> getParticipantIds(UUID sessionId) {
-        String url = sessionServiceUrl + "/api/sessions/" + sessionId + "/participants";
-        java.util.Map<String, Object> body = restTemplate.getForObject(url, java.util.Map.class);
-        if (body == null || !(body.get("participants") instanceof List<?> raw)) {
-            throw new IllegalStateException("Не удалось получить участников сессии");
+    private static Long movieIdAt(List<Long> ids, int index) {
+        if (ids == null || ids.isEmpty() || index < 0 || index >= ids.size()) {
+            return null;
         }
-        return ((List<java.util.Map<String, Object>>) raw).stream()
-                .map(p -> String.valueOf(p.get("id")))
-                .toList();
+        return ids.get(index);
     }
 
-    // получение всех голосов в сессии, нам важен ВАШ голос
+    private int nextMovieIndex(int currentIndex) {
+        int next = currentIndex + 1;
+        if (catalogService.ensureHasMovieAt(next)) {
+            return next;
+        }
+
+        log.info("Каталог закончился на индексе {}, начинаем новый круг", currentIndex);
+        catalogService.resetPaging();
+        return 0;
+    }
+
+    @SuppressWarnings("unchecked")
+    public SessionSnapshot getSessionSnapshot(UUID sessionId) {
+        String url = sessionServiceUrl + String.format(SESSION_PARTICIPANTS_PATH, sessionId);
+        Map<String, Object> body = restTemplate.getForObject(url, Map.class);
+        if (body == null) {
+            throw new IllegalStateException("Не удалось получить состояние сессии");
+        }
+
+        List<String> participants = List.of();
+        if (body.get("participants") instanceof List<?> raw) {
+            participants = ((List<Map<String, Object>>) raw).stream()
+                    .map(p -> String.valueOf(p.get("id")))
+                    .toList();
+        }
+
+        int index = 0;
+        if (body.get("currentMovieIndex") instanceof Number number) {
+            index = number.intValue();
+        }
+
+        return new SessionSnapshot(participants, index, Boolean.TRUE.equals(body.get("votingStarted")));
+    }
+
+    public record SessionSnapshot(List<String> participants, int currentMovieIndex, boolean votingStarted) {
+    }
+
+    public static class StaleVoteException extends RuntimeException {
+        public StaleVoteException(String message) {
+            super(message);
+        }
+    }
+
     @Transactional(readOnly = true)
     public List<Vote> getAllVotesInSession(UUID sessionId) {
         return voteRepository.findBySessionIdOrderByCreatedAtDesc(sessionId);
     }
 
-    // обновление индекса фильма в сессии
-    public void updateMovieIndexInSession(UUID sessionId, int movieIndex) {
+    public boolean updateMovieIndexInSession(UUID sessionId, int movieIndex) {
         try {
             String url = sessionServiceUrl + String.format(SESSION_UPDATE_INDEX_PATH, sessionId);
 
@@ -188,13 +204,20 @@ public class VotingService {
 
             restTemplate.postForObject(url, body, Void.class);
             log.info("Индекс фильма обновлён: сессия={}, индекс={}", sessionId, movieIndex);
+            return true;
         } catch (Exception e) {
-            log.warn("Ошибка при обновлении индекса фильма (не критично): {}", e.getMessage());
+            log.warn("Ошибка при обновлении индекса фильма: {}", e.getMessage());
+            return false;
         }
     }
 
-    @Transactional(readOnly = true)
-    public long countLikes(UUID sessionId, Long movieId) {
-        return voteRepository.countDistinctParticipants(sessionId, movieId, VoteDecision.LIKE);
+    public void finishSession(UUID sessionId) {
+        try {
+            String url = sessionServiceUrl + String.format(SESSION_FINISH_PATH, sessionId);
+            restTemplate.postForObject(url, Map.of(), Void.class);
+            log.info("Сессия завершена по совпадению: {}", sessionId);
+        } catch (Exception e) {
+            log.warn("Ошибка при завершении сессии: {}", e.getMessage());
+        }
     }
 }

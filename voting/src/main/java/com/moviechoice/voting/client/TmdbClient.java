@@ -25,10 +25,15 @@ public class TmdbClient {
     private String token;
 
     public TmdbMoviesResponseDto getPopularMovies() {
-        String url = baseUrl + "/movie/popular?language=ru-RU&page=1";
+        return getPopularMovies(1);
+    }
+
+    public TmdbMoviesResponseDto getPopularMovies(int page) {
+        int safePage = Math.max(1, page);
+        String url = baseUrl + "/movie/popular?language=ru-RU&page=" + safePage;
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(token);
-        log.info("Запрашиваем популярные фильмы у TMDB");
+        log.info("Запрашиваем популярные фильмы у TMDB, страница {}", safePage);
         return restTemplate
                 .exchange(url, HttpMethod.GET, new HttpEntity<>(headers), TmdbMoviesResponseDto.class)
                 .getBody();

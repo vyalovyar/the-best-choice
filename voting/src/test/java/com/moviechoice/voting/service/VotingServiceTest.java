@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -15,6 +17,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.moviechoice.voting.client.TmdbClient;
+import com.moviechoice.voting.dto.MovieResponse;
 import com.moviechoice.voting.dto.tmld.TmdbMovieDto;
 import com.moviechoice.voting.dto.tmld.TmdbMoviesResponseDto;
 import com.moviechoice.voting.entity.Movie;
@@ -48,6 +51,12 @@ class VotingServiceTest {
     @Mock
     private RestTemplate restTemplate;
 
+    @Mock
+    private MovieCacheService movieCacheService;
+
+    @Mock
+    private CatalogService catalogService;
+
     @InjectMocks
     private VotingService votingService;
 
@@ -65,23 +74,12 @@ class VotingServiceTest {
         List<Movie> expectedMovies = List.of(Movie.builder().id(101L).title("Interstellar").build());
 
         when(movieRepository.count()).thenReturn(0L);
-        when(tmdbClient.getPopularMovies()).thenReturn(response);
-        when(movieRepository.findById(101L)).thenReturn(Optional.empty());
-        when(movieRepository.save(any(Movie.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(movieRepository.findAll(any(Sort.class))).thenReturn(expectedMovies);
 
-        List<Movie> actualMovies = votingService.getMoviesForVote();
+        List<Movie> actualMovies = votingService.loadMovies();
 
-        ArgumentCaptor<Movie> movieCaptor = ArgumentCaptor.forClass(Movie.class);
-        verify(movieRepository).save(movieCaptor.capture());
-
-        Movie savedMovie = movieCaptor.getValue();
-        assertThat(savedMovie.getId()).isEqualTo(101L);
-        assertThat(savedMovie.getTitle()).isEqualTo("Interstellar");
-        assertThat(savedMovie.getOverview()).isEqualTo("Space epic");
-        assertThat(savedMovie.getVoteAvg()).isEqualTo(8.7);
-        assertThat(savedMovie.getPosterPath()).isEqualTo("/poster.jpg");
-        assertThat(savedMovie.getCacheAt()).isNotNull();
+        verify(movieCacheService).refreshMovies();
+        verify(movieCacheService).assignMissingPositions();
         assertThat(actualMovies).isEqualTo(expectedMovies);
     }
     //Тест для проверки, что метод getMoviesForVote возвращает кэшированные фильмы, когда кэш свежий. Он имитирует наличие фильма в репозитории с недавним временем кэша и проверяет, что этот фильм возвращается без вызова TMDB клиента или сохранения нового фильма
@@ -95,14 +93,12 @@ class VotingServiceTest {
                 .build();
 
         when(movieRepository.count()).thenReturn(1L);
-        when(movieRepository.findTopByOrderByCacheAtDesc()).thenReturn(Optional.of(cachedMovie));
         when(movieRepository.findAll(any(Sort.class))).thenReturn(List.of(cachedMovie));
 
-        List<Movie> movies = votingService.getMoviesForVote();
+        List<Movie> movies = votingService.loadMovies();
 
         assertThat(movies).containsExactly(cachedMovie);
-        verify(tmdbClient, never()).getPopularMovies();
-        verify(movieRepository, never()).save(any(Movie.class));
+        verifyNoInteractions(movieCacheService);
     }
     //Тест для проверки, что метод updateMoviesFromTmdb обновляет существующий фильм, если он уже есть в репозитории. Он имитирует ответ от TMDB клиента с новым DTO для существующего фильма и проверяет, что фильм в репозитории обновляется с новыми данными и сохраняется
     @Test
@@ -119,30 +115,19 @@ class VotingServiceTest {
         TmdbMoviesResponseDto response = new TmdbMoviesResponseDto();
         response.setResults(List.of(dto));
 
-        when(tmdbClient.getPopularMovies()).thenReturn(response);
-        when(movieRepository.findById(42L)).thenReturn(Optional.of(existingMovie));
-        when(movieRepository.save(any(Movie.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
         votingService.updateMoviesFromTmdb();
 
-        ArgumentCaptor<Movie> movieCaptor = ArgumentCaptor.forClass(Movie.class);
-        verify(movieRepository).save(movieCaptor.capture());
-
-        Movie savedMovie = movieCaptor.getValue();
-        assertThat(savedMovie).isSameAs(existingMovie);
-        assertThat(savedMovie.getTitle()).isEqualTo("New title");
-        assertThat(savedMovie.getOverview()).isEqualTo("New overview");
-        assertThat(savedMovie.getVoteAvg()).isEqualTo(8.4);
-        assertThat(savedMovie.getPosterPath()).isEqualTo("/new.jpg");
-        assertThat(savedMovie.getCacheAt()).isNotNull();
+        verify(movieCacheService).refreshMovies();
+        verify(movieCacheService).assignMissingPositions();
     }
     //тест для проверки, что метод updateMoviesFromTmdb останавливается, если TMDB клиент возвращает null. Он имитирует такой ответ и проверяет, что репозиторий фильмов не сохраняет никаких фильмов
     @Test
     void updateMoviesFromTmdbStopsWhenClientReturnsNull() {
-        when(tmdbClient.getPopularMovies()).thenReturn(null);
+        doNothing().when(movieCacheService).refreshMovies();
 
         votingService.updateMoviesFromTmdb();
 
+        verify(movieCacheService).refreshMovies();
         verify(movieRepository, never()).save(any(Movie.class));
     }
     //Тест для проверки метода createVote, который создает и сохраняет голос для существующего фильма. Он имитирует наличие фильма в репозитории и проверяет, что голос сохраняется с правильными данными. Также есть тест для проверки, что метод createVote выбрасывает исключение, если фильм не существует, и не сохраняет голос в этом случае
@@ -261,7 +246,7 @@ class VotingServiceTest {
         assertThat(outcome.voted()).isEqualTo(1);
         assertThat(outcome.total()).isEqualTo(2);
         verify(voteRepository, never()).deleteBySessionIdAndMovie_Id(sessionId, 10L);
-        verify(movieRepository, never()).findAllIdsOrdered();
+        verify(restTemplate, never()).postForObject(any(String.class), any(), eq(Void.class));
     }
 
     @Test
@@ -274,6 +259,7 @@ class VotingServiceTest {
         when(voteRepository.countParticipantsVoted(sessionId, 10L)).thenReturn(2L);
         when(voteRepository.countDistinctParticipants(sessionId, 10L, VoteDecision.LIKE)).thenReturn(1L);
         when(movieRepository.findAllIdsOrdered()).thenReturn(List.of(10L, 20L));
+        when(catalogService.ensureHasMovieAt(1)).thenReturn(true);
 
         var outcome = votingService.castVote(sessionId, "participant-2", 10L, VoteDecision.DISLIKE);
 
@@ -300,16 +286,76 @@ class VotingServiceTest {
 
         assertThat(outcome.status()).isEqualTo(com.moviechoice.voting.dto.VoteOutcome.Status.MATCH);
         verify(voteRepository).deleteBySessionIdAndMovie_Id(sessionId, 10L);
-        verify(movieRepository, never()).findAllIdsOrdered();
-        verify(restTemplate, never()).postForObject(any(String.class), any(), eq(Void.class));
+        verify(restTemplate, never()).postForObject(
+                eq("http://session-service/api/sessions/" + sessionId + "/update-index"),
+                any(),
+                eq(Void.class));
+        verify(restTemplate).postForObject(
+                eq("http://session-service/api/sessions/" + sessionId + "/finish"),
+                any(),
+                eq(Void.class));
     }
 
     private void mockParticipants(UUID sessionId) {
         String url = "http://session-service/api/sessions/" + sessionId + "/participants";
-        Map<String, Object> response = Map.of("participants", List.of(
-                Map.of("id", "participant-1"),
-                Map.of("id", "participant-2")));
+        Map<String, Object> response = Map.of(
+                "participants", List.of(
+                        Map.of("id", "participant-1"),
+                        Map.of("id", "participant-2")),
+                "currentMovieIndex", 0,
+                "votingStarted", true);
         when(restTemplate.getForObject(eq(url), eq(Map.class))).thenReturn(response);
+        when(movieRepository.findAllIdsOrdered()).thenReturn(List.of(10L, 20L));
+    }
+
+    @Test
+    void castVoteRejectsVoteForMovieThatIsNoLongerCurrent() {
+        UUID sessionId = UUID.randomUUID();
+        Movie stale = movie(10L);
+        mockParticipants(sessionId);
+        when(movieRepository.findById(10L)).thenReturn(Optional.of(stale));
+
+        assertThatThrownBy(() -> votingService.castVote(sessionId, "participant-1", 99L, VoteDecision.LIKE))
+                .isInstanceOf(VotingService.StaleVoteException.class)
+                .hasMessageContaining("фильм уже сменился");
+    }
+
+    @Test
+    void castVoteRejectsSessionWithSingleParticipant() {
+        UUID sessionId = UUID.randomUUID();
+        String url = "http://session-service/api/sessions/" + sessionId + "/participants";
+        when(restTemplate.getForObject(eq(url), eq(Map.class))).thenReturn(Map.of(
+                "participants", List.of(Map.of("id", "participant-1")),
+                "currentMovieIndex", 0,
+                "votingStarted", true));
+
+        assertThatThrownBy(() -> votingService.castVote(sessionId, "participant-1", 10L, VoteDecision.LIKE))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("минимум 2 участника");
+    }
+
+    @Test
+    void getMoviesForVoteExposesGenreAndRatingForFrontendChips() {
+        Movie cachedMovie = Movie.builder()
+                .id(7L)
+                .title("Inception")
+                .overview("Dreams")
+                .posterPath("/poster.jpg")
+                .voteAvg(8.7)
+                .genre("Фантастика, Триллер")
+                .cacheAt(ZonedDateTime.now())
+                .build();
+
+        when(movieRepository.count()).thenReturn(1L);
+        when(movieRepository.findAll(any(Sort.class))).thenReturn(List.of(cachedMovie));
+
+        List<MovieResponse> movies = votingService.getMoviesForVote();
+
+        assertThat(movies).singleElement().satisfies(movie -> {
+            assertThat(movie.genre()).isEqualTo("Фантастика, Триллер");
+            assertThat(movie.rating()).isEqualTo(8.7);
+            assertThat(movie.posterPath()).isEqualTo("/poster.jpg");
+        });
     }
 
     private static Movie movie(Long id) {

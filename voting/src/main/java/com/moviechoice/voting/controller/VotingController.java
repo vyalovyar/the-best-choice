@@ -4,7 +4,6 @@ package com.moviechoice.voting.controller;
 import com.moviechoice.voting.dto.*;
 import com.moviechoice.voting.entity.Movie;
 import com.moviechoice.voting.entity.Vote;
-import com.moviechoice.voting.entity.VoteDecision;
 import com.moviechoice.voting.service.VotingService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,11 +14,14 @@ import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.annotation.SendToUser;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+
 @RestController
 @RequestMapping("/api/voting")
 @RequiredArgsConstructor
@@ -31,13 +33,35 @@ public class VotingController {
     private final ObjectMapper objectMapper;
 
     @GetMapping("/movies")
-    public List<Movie> getMovies() {
+    public List<MovieResponse> getMovies() {
         return votingService.getMoviesForVote();
+    }
+
+    @GetMapping("/movies/{index}")
+    public ResponseEntity<MovieResponse> getMovieAt(@PathVariable int index) {
+        return votingService.getMovieAtIndex(index)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/sessions/{sessionId}/votes")
     public List<Vote> getVotes(@PathVariable UUID sessionId) {
         return votingService.getAllVotesInSession(sessionId);
+    }
+
+    @PostMapping("/sessions/{sessionId}/participants-changed")
+    public void participantsChanged(@PathVariable UUID sessionId) {
+        simpMessagingTemplate.convertAndSend("/topic/session/" + sessionId + "/participants", "CHANGED");
+        log.info("Разослано уведомление об изменении состава сессии {}", sessionId);
+    }
+
+    @PostMapping("/sessions/{sessionId}/participant-left")
+    public void participantLeft(@PathVariable UUID sessionId, @RequestBody(required = false) Map<String, String> body) {
+        Map<String, String> payload = new HashMap<>();
+        payload.put("participantId", body == null ? "" : body.getOrDefault("participantId", ""));
+        payload.put("participantName", body == null ? "" : body.getOrDefault("participantName", ""));
+        simpMessagingTemplate.convertAndSend("/topic/session/" + sessionId + "/left", payload);
+        log.info("Участник {} покинул сессию {}", payload.get("participantId"), sessionId);
     }
 
     @MessageMapping("/vote")
@@ -61,7 +85,8 @@ public class VotingController {
                     Movie movie = vote.getMovie();
                     sendJson(base + "/match", new MatchMessage(
                             vote.getSessionId(), movie.getId(), movie.getTitle(),
-                            movie.getPosterPath(), "У вас совпадение!"), "match notification");
+                            movie.getPosterPath(), movie.getGenre(), movie.getVoteAvg(),
+                            "У вас совпадение!"), "match notification");
                     log.info("Совпадение: сессия={}, фильм={}", vote.getSessionId(), movie.getId());
                 }
                 case NEXT -> sendJson(base + "/index",
@@ -69,14 +94,14 @@ public class VotingController {
                         "movie index update");
                 case WAITING -> { }
             }
-        }catch (Exception e) {
+        } catch (VotingService.StaleVoteException e) {
+            log.info("Устаревший голос: сессия={}, участник={}", request.getSessionId(), request.getParticipantId());
+            sendParticipantError(request.getSessionId(), request.getParticipantId(), e.getMessage());
+        } catch (Exception e) {
             log.error("Ошибка голосования", e);
-            sendJson("/topic/session/" + request.getSessionId() + "/errors",
-                    Map.of("participantId", request.getParticipantId(),
-                            "message", e.getMessage() == null ? "Ошибка голосования" : e.getMessage()),
-                    "error");
+            sendParticipantError(request.getSessionId(), request.getParticipantId(),
+                    e.getMessage() == null ? "Ошибка голосования" : e.getMessage());
         }
-
     }
 
     @MessageMapping("/start-voting")
@@ -90,6 +115,13 @@ public class VotingController {
     public Map<String, String> handleError(Exception e) {
         log.warn("Ошибка обработки голоса: {}", e.getMessage());
         return Map.of("message", e.getMessage() == null ? "Ошибка голосования" : e.getMessage());
+    }
+
+    private void sendParticipantError(UUID sessionId, String participantId, String message) {
+        sendJson("/topic/session/" + sessionId + "/errors",
+                Map.of("participantId", participantId == null ? "" : participantId,
+                        "message", message == null ? "Ошибка голосования" : message),
+                "error");
     }
 
     private void sendJson(String destination, Object payload, String payloadType) {

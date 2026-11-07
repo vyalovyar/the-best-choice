@@ -2,10 +2,12 @@ package com.moviechoice.voting.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -19,13 +21,14 @@ import java.util.UUID;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.moviechoice.voting.client.TmdbClient;
 import com.moviechoice.voting.dto.VoteRequest;
 import com.moviechoice.voting.entity.Movie;
 import com.moviechoice.voting.entity.Vote;
 import com.moviechoice.voting.entity.VoteDecision;
 import com.moviechoice.voting.repository.MovieRepository;
 import com.moviechoice.voting.repository.VoteRepository;
+import com.moviechoice.voting.service.CatalogService;
+import com.moviechoice.voting.service.MovieCacheService;
 import com.moviechoice.voting.service.VotingService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -45,9 +48,6 @@ class VotingRoundFlowTest {
     private static final String PARTICIPANT_TWO = "participant-2";
 
     @Mock
-    private TmdbClient tmdbClient;
-
-    @Mock
     private MovieRepository movieRepository;
 
     @Mock
@@ -59,6 +59,12 @@ class VotingRoundFlowTest {
     @Mock
     private SimpMessagingTemplate messagingTemplate;
 
+    @Mock
+    private MovieCacheService movieCacheService;
+
+    @Mock
+    private CatalogService catalogService;
+
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private final List<Vote> storedVotes = new ArrayList<>();
     private UUID sessionId;
@@ -67,15 +73,20 @@ class VotingRoundFlowTest {
     @BeforeEach
     void setUp() {
         sessionId = UUID.randomUUID();
-        VotingService votingService = new VotingService(tmdbClient, movieRepository, voteRepository, restTemplate);
+        VotingService votingService = new VotingService(movieRepository, voteRepository, restTemplate, movieCacheService, catalogService);
         ReflectionTestUtils.setField(votingService, "sessionServiceUrl", "http://session-service");
         votingController = new VotingController(votingService, messagingTemplate, objectMapper);
 
         when(restTemplate.getForObject(
                 "http://session-service/api/sessions/" + sessionId + "/participants",
-                Map.class)).thenReturn(Map.of("participants", List.of(
-                Map.of("id", PARTICIPANT_ONE),
-                Map.of("id", PARTICIPANT_TWO))));
+                Map.class)).thenReturn(Map.of(
+                "participants", List.of(
+                        Map.of("id", PARTICIPANT_ONE),
+                        Map.of("id", PARTICIPANT_TWO)),
+                "currentMovieIndex", 0,
+                "votingStarted", true));
+        lenient().when(movieRepository.findAllIdsOrdered()).thenReturn(List.of(MOVIE_ID, 43L));
+        lenient().when(catalogService.ensureHasMovieAt(anyInt())).thenReturn(true);
 
         Movie movie = Movie.builder()
                 .id(MOVIE_ID)
@@ -167,8 +178,52 @@ class VotingRoundFlowTest {
 
         verify(messagingTemplate).convertAndSend(eq(topic("/match")), any(Object.class));
         verify(messagingTemplate, never()).convertAndSend(eq(topic("/index")), any(Object.class));
-        verify(restTemplate, never()).postForObject(anyString(), any(), eq(Void.class));
+        verify(restTemplate).postForObject(
+                eq("http://session-service/api/sessions/" + sessionId + "/finish"),
+                any(),
+                eq(Void.class));
+        verify(restTemplate, never()).postForObject(
+                eq("http://session-service/api/sessions/" + sessionId + "/update-index"),
+                any(),
+                eq(Void.class));
         assertThat(storedVotes).isEmpty();
+    }
+
+    @Test
+    void staleVoteForPreviousMovieNotifiesOnlyThatParticipant() throws Exception {
+        when(movieRepository.findAllIdsOrdered()).thenReturn(List.of(MOVIE_ID, 99L));
+
+        votingController.handlerVote(request(PARTICIPANT_ONE, VoteDecision.LIKE));
+        votingController.handlerVote(request(PARTICIPANT_TWO, VoteDecision.LIKE));
+
+        VoteRequest stale = request(PARTICIPANT_ONE, VoteDecision.DISLIKE);
+        stale.setMovieId(99L);
+
+        ArgumentCaptor<Object> errorCaptor = ArgumentCaptor.forClass(Object.class);
+        votingController.handlerVote(stale);
+
+        verify(messagingTemplate).convertAndSend(eq(topic("/errors")), errorCaptor.capture());
+        JsonNode error = objectMapper.readTree((String) errorCaptor.getValue());
+        assertThat(error.get("participantId").asText()).isEqualTo(PARTICIPANT_ONE);
+        assertThat(error.get("message").asText()).contains("фильм уже сменился");
+    }
+
+    @Test
+    void roundDoesNotAdvanceWhenSessionServiceRejectsIndexUpdate() {
+        when(movieRepository.findAllIdsOrdered()).thenReturn(List.of(MOVIE_ID, 99L));
+        when(restTemplate.postForObject(
+                eq("http://session-service/api/sessions/" + sessionId + "/update-index"),
+                any(),
+                eq(Void.class)))
+                .thenThrow(new RuntimeException("session service unavailable"));
+
+        ArgumentCaptor<Object> errorCaptor = ArgumentCaptor.forClass(Object.class);
+        votingController.handlerVote(request(PARTICIPANT_ONE, VoteDecision.DISLIKE));
+        votingController.handlerVote(request(PARTICIPANT_TWO, VoteDecision.DISLIKE));
+
+        verify(messagingTemplate, never()).convertAndSend(eq(topic("/index")), any(Object.class));
+        verify(messagingTemplate).convertAndSend(eq(topic("/errors")), errorCaptor.capture());
+        assertThat(errorCaptor.getValue().toString()).contains("Не удалось переключить фильм");
     }
 
     private VoteRequest request(String participantId, VoteDecision decision) {
