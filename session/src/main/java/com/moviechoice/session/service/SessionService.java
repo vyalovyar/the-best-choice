@@ -15,9 +15,15 @@ public interface SessionService {
     Optional<Session> updateMovieIndex(UUID sessionId, int movieIndex);
     Optional<Session> startSession(UUID sessionId);
     Optional<Session> finishSession(UUID sessionId);
-    Participant addParticipant(UUID sessionId, String participantName);
+    Participant addParticipant(UUID sessionId, String participantName, boolean host);
     List<Participant> getParticipants(UUID sessionId);
     Optional<Participant> findByParticipantId(UUID participantId);
+    Optional<Participant> findByToken(UUID sessionId, String token);
     Optional<Participant> removeParticipant(UUID participantId);
+    Optional<Participant> removeParticipant(UUID participantId, String reason);
     boolean isNameTaken(UUID sessionId, String participantName);
+    boolean heartbeat(UUID sessionId, UUID participantId);
+    boolean isHost(UUID sessionId, UUID participantId);
+    boolean isHostToken(UUID sessionId, String hostToken);
+    int pruneStaleParticipants();
 }

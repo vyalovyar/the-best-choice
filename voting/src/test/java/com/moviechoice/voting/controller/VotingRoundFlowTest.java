@@ -37,6 +37,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.http.HttpEntity;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 
@@ -162,12 +163,13 @@ class VotingRoundFlowTest {
         assertThat(secondProgress.get("votedCount").asInt()).isEqualTo(2);
         assertThat(secondProgress.get("totalParticipants").asInt()).isEqualTo(2);
         verify(messagingTemplate, never()).convertAndSend(eq(matchTopic), any(Object.class));
-        ArgumentCaptor<Object> indexBodyCaptor = ArgumentCaptor.forClass(Object.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<HttpEntity<Map<String, Object>>> indexBodyCaptor = ArgumentCaptor.forClass(HttpEntity.class);
         verify(restTemplate).postForObject(
                 eq("http://session-service/api/sessions/" + sessionId + "/update-index"),
                 indexBodyCaptor.capture(),
                 eq(Void.class));
-        assertThat(indexBodyCaptor.getValue()).isEqualTo(Map.of("currentMovieIndex", 1));
+        assertThat(indexBodyCaptor.getValue().getBody()).isEqualTo(Map.of("currentMovieIndex", 1));
         assertThat(storedVotes).isEmpty();
     }
 

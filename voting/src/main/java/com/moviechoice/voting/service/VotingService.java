@@ -13,6 +13,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.ZonedDateTime;
@@ -36,6 +38,9 @@ public class VotingService {
 
     @Value("${session.service.url:http://localhost:8081}")
     private String sessionServiceUrl;
+
+    @Value("${session.internal-token:change-me-internal}")
+    private String internalToken;
 
     private static final String SESSION_PARTICIPANTS_PATH = "/api/sessions/%s/participants";
     private static final String SESSION_UPDATE_INDEX_PATH = "/api/sessions/%s/update-index";
@@ -62,12 +67,23 @@ public class VotingService {
     }
 
     public Optional<MovieResponse> getMovieAtIndex(int index) {
+        if (index < 0) {
+            return Optional.empty();
+        }
+        /* Индекс за пределами загруженного каталога: подтягиваем следующую
+           пачку страниц TMDB, иначе игра упирается в первые 20 фильмов. */
+        catalogService.ensureHasMovieAt(index);
+
         List<Long> ids = movieRepository.findAllIdsOrdered();
         Long movieId = movieIdAt(ids, index);
         if (movieId == null) {
             return Optional.empty();
         }
         return movieRepository.findById(movieId).map(MovieResponse::from);
+    }
+
+    public void assignMissingPositions() {
+        movieCacheService.assignMissingPositions();
     }
 
     @Transactional
@@ -140,6 +156,12 @@ public class VotingService {
         }
     }
 
+    private HttpHeaders internalHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Internal-Token", internalToken);
+        return headers;
+    }
+
     private static Long movieIdAt(List<Long> ids, int index) {
         if (ids == null || ids.isEmpty() || index < 0 || index >= ids.size()) {
             return null;
@@ -202,7 +224,7 @@ public class VotingService {
             HashMap<String, Object> body = new HashMap<>();
             body.put("currentMovieIndex", movieIndex);
 
-            restTemplate.postForObject(url, body, Void.class);
+            restTemplate.postForObject(url, new HttpEntity<>(body, internalHeaders()), Void.class);
             log.info("Индекс фильма обновлён: сессия={}, индекс={}", sessionId, movieIndex);
             return true;
         } catch (Exception e) {
@@ -214,7 +236,7 @@ public class VotingService {
     public void finishSession(UUID sessionId) {
         try {
             String url = sessionServiceUrl + String.format(SESSION_FINISH_PATH, sessionId);
-            restTemplate.postForObject(url, Map.of(), Void.class);
+            restTemplate.postForObject(url, new HttpEntity<>(Map.of(), internalHeaders()), Void.class);
             log.info("Сессия завершена по совпадению: {}", sessionId);
         } catch (Exception e) {
             log.warn("Ошибка при завершении сессии: {}", e.getMessage());

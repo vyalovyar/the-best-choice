@@ -47,6 +47,9 @@ public class Session {
     @Column(name = "voting_started")
     private Boolean votingStarted = false;
 
+    @Column(name = "host_token", length = 64)
+    private String hostToken;
+
     @Version
     @Column(name = "version")
     private Long version;

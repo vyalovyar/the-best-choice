@@ -14,7 +14,7 @@ public class SessionEventNotifier {
 
     private static final Logger log = LoggerFactory.getLogger(SessionEventNotifier.class);
     private static final String PARTICIPANTS_CHANGED_PATH = "/api/voting/sessions/%s/participants-changed";
-    private static final String PARTICIPANT_LEFT_PATH = "/api/voting/sessions/%s/participant-left";
+    private static final String PARTICIPANT_LEFT_PATH = "/api/voting/sessions/%s/participant-removed";
 
     private final RestTemplate restTemplate = new RestTemplate();
     private final String votingServiceUrl;
@@ -27,10 +27,11 @@ public class SessionEventNotifier {
         post(PARTICIPANTS_CHANGED_PATH, sessionId, null);
     }
 
-    public void participantLeft(UUID sessionId, String participantId, String participantName) {
+    public void participantRemoved(UUID sessionId, String participantId, String participantName, String reason) {
         post(PARTICIPANT_LEFT_PATH, sessionId, Map.of(
                 "participantId", participantId == null ? "" : participantId,
-                "participantName", participantName == null ? "" : participantName));
+                "participantName", participantName == null ? "" : participantName,
+                "reason", reason == null ? "LEFT" : reason));
     }
 
     private void post(String path, UUID sessionId, Map<String, String> body) {

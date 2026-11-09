@@ -15,3 +15,6 @@ spring:
 voting:
   service:
     url: ${VOTING_SERVICE_URL:}
+
+session:
+  internal-token: ${SESSION_INTERNAL_TOKEN:change-me-internal}

@@ -26,6 +26,7 @@ services:
       DATABASE_USER: ${POSTGRES_USER:-postgres}
       DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
       VOTING_SERVICE_URL: http://voting:8082
+      SESSION_INTERNAL_TOKEN: ${SESSION_INTERNAL_TOKEN:-change-me-internal}
     depends_on:
       postgres:
         condition: service_healthy
@@ -49,6 +50,7 @@ services:
       DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
       TMDB_TOKEN: ${TMDB_TOKEN:?set TMDB_TOKEN in .env}
       SESSION_SERVICE_URL: http://session:8081
+      SESSION_INTERNAL_TOKEN: ${SESSION_INTERNAL_TOKEN:-change-me-internal}
     depends_on:
       postgres:
         condition: service_healthy
@@ -70,6 +72,7 @@ services:
     environment:
       PORT: 8080
       SESSION_SERVICE_URL: http://session:8081
+      SESSION_INTERNAL_TOKEN: ${SESSION_INTERNAL_TOKEN:-change-me-internal}
       VOTING_SERVICE_URL: http://voting:8082
       VOTING_WS_URL: ws://voting:8082
     depends_on:

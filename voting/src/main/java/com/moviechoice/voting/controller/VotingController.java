@@ -55,13 +55,15 @@ public class VotingController {
         log.info("Разослано уведомление об изменении состава сессии {}", sessionId);
     }
 
-    @PostMapping("/sessions/{sessionId}/participant-left")
-    public void participantLeft(@PathVariable UUID sessionId, @RequestBody(required = false) Map<String, String> body) {
+    @PostMapping("/sessions/{sessionId}/participant-removed")
+    public void participantRemoved(@PathVariable UUID sessionId, @RequestBody(required = false) Map<String, String> body) {
         Map<String, String> payload = new HashMap<>();
         payload.put("participantId", body == null ? "" : body.getOrDefault("participantId", ""));
         payload.put("participantName", body == null ? "" : body.getOrDefault("participantName", ""));
+        payload.put("reason", body == null ? "LEFT" : body.getOrDefault("reason", "LEFT"));
         simpMessagingTemplate.convertAndSend("/topic/session/" + sessionId + "/left", payload);
-        log.info("Участник {} покинул сессию {}", payload.get("participantId"), sessionId);
+        log.info("Участник {} покинул сессию {} (причина: {})",
+                payload.get("participantId"), sessionId, payload.get("reason"));
     }
 
     @MessageMapping("/vote")

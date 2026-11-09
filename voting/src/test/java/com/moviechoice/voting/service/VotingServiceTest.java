@@ -34,6 +34,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Sort;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.http.HttpEntity;
 import org.springframework.web.client.RestTemplate;
 
 @ExtendWith(MockitoExtension.class)
@@ -63,6 +64,7 @@ class VotingServiceTest {
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(votingService, "sessionServiceUrl", "http://session-service");
+        ReflectionTestUtils.setField(votingService, "internalToken", "test-internal-token");
     }
 
     //Тест для проверкает, что метод getMoviesForVote обновляет кэш фильмов, когда репозиторий пустой. Он имитирует ответ от TMDB клиента и проверяет, что фильм сохраняется в репозитории с правильными данными
@@ -188,13 +190,14 @@ class VotingServiceTest {
         votingService.updateMovieIndexInSession(sessionId, 3);
 
         @SuppressWarnings("unchecked")
-        ArgumentCaptor<Map<String, Object>> bodyCaptor = ArgumentCaptor.forClass(Map.class);
+        ArgumentCaptor<HttpEntity<Map<String, Object>>> bodyCaptor = ArgumentCaptor.forClass(HttpEntity.class);
         verify(restTemplate).postForObject(
                 eq("http://session-service/api/sessions/" + sessionId + "/update-index"),
                 bodyCaptor.capture(),
                 eq(Void.class)
         );
-        assertThat(bodyCaptor.getValue()).containsEntry("currentMovieIndex", 3);
+        assertThat(bodyCaptor.getValue().getBody()).containsEntry("currentMovieIndex", 3);
+        assertThat(bodyCaptor.getValue().getHeaders().getFirst("X-Internal-Token")).isNotBlank();
     }
     //проверка метода updateMovieIndexInSession, который не выбрасывает исключение, если RestTemplate выбрасывает ошибку (например, если сервис сессий недоступен). Он имитирует такую ситуацию и проверяет, что метод выполняется без выброса исключения и что RestTemplate все равно вызывается с правильным URL
     @Test

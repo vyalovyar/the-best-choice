@@ -6,7 +6,10 @@ import java.time.ZonedDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "participants")
+@Table(name = "participants", indexes = {
+        @Index(name = "idx_participants_session", columnList = "session_id"),
+        @Index(name = "idx_participants_last_seen", columnList = "last_seen")
+})
 @Getter
 @Setter
 @Builder
@@ -26,4 +29,18 @@ public class Participant {
 
     @Column(name = "joined_at", nullable = false)
     private ZonedDateTime joinedAt;
+
+    @Column(name = "last_seen")
+    private ZonedDateTime lastSeen;
+
+    @Builder.Default
+    @Column(name = "is_host")
+    private Boolean host = false;
+
+    @Column(name = "token", length = 64)
+    private String token;
+
+    public boolean isHost() {
+        return Boolean.TRUE.equals(host);
+    }
 }

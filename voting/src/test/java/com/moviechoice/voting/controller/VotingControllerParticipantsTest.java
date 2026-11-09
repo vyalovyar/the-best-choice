@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 
+import java.util.Map;
 import java.util.UUID;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,16 +25,28 @@ class VotingControllerParticipantsTest {
     private SimpMessagingTemplate messagingTemplate;
 
     @Test
-    void participantLeftNotifiesLeftTopicWithName() {
+    void participantRemovedNotifiesLeftTopicWithReason() {
         UUID sessionId = UUID.randomUUID();
         VotingController controller = new VotingController(votingService, messagingTemplate, new ObjectMapper());
 
-        controller.participantLeft(sessionId, java.util.Map.of(
-                "participantId", "p-1", "participantName", "Alice"));
+        controller.participantRemoved(sessionId, Map.of(
+                "participantId", "p-1", "participantName", "Alice", "reason", "KICKED"));
 
         verify(messagingTemplate).convertAndSend(
                 eq("/topic/session/" + sessionId + "/left"),
-                eq(java.util.Map.of("participantId", "p-1", "participantName", "Alice")));
+                eq(Map.of("participantId", "p-1", "participantName", "Alice", "reason", "KICKED")));
+    }
+
+    @Test
+    void participantRemovedDefaultsToLeftReasonWhenBodyMissing() {
+        UUID sessionId = UUID.randomUUID();
+        VotingController controller = new VotingController(votingService, messagingTemplate, new ObjectMapper());
+
+        controller.participantRemoved(sessionId, null);
+
+        verify(messagingTemplate).convertAndSend(
+                eq("/topic/session/" + sessionId + "/left"),
+                eq(Map.of("participantId", "", "participantName", "", "reason", "LEFT")));
     }
 
     @Test

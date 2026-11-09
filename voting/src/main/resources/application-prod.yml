@@ -23,3 +23,4 @@ tmdb:
 session:
   service:
     url: ${SESSION_SERVICE_URL}
+  internal-token: ${SESSION_INTERNAL_TOKEN:change-me-internal}
