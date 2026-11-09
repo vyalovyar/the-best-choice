@@ -16,7 +16,7 @@ import java.time.ZonedDateTime;
 @Slf4j
 public class CatalogService {
 
-    private static final int MAX_PAGES_PER_CALL = 5;
+    private static final int MAX_PAGES_PER_CALL = 10;
 
     private final MovieRepository movieRepository;
     private final CatalogStateRepository catalogStateRepository;

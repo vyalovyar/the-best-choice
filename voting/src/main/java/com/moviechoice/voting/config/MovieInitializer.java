@@ -20,6 +20,14 @@ public class MovieInitializer {
     //Предзагрузка фильмов в бд
     @EventListener(ApplicationReadyEvent.class)
     public void initializeMovies() {
+        /* Позиции нужны всегда: без них фильм не попадает в очередь показа,
+           даже если предзагрузка выключена. */
+        try {
+            votingService.assignMissingPositions();
+        } catch (Exception e) {
+            log.warn("Не удалось проставить позиции каталога: {}", e.getMessage());
+        }
+
         if (!preloadOnStartup) {
             log.info("ПРЕДЗАГРУЗКА ФИЛЬМОВ ПРИ СТАРТЕ ОТКЛЮЧЕНА");
             return;
