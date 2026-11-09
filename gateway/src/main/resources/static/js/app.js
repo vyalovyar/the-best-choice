@@ -4,6 +4,10 @@ const state = {
     participantName: null,
     sessionCode: null,
     isHost: false,
+    participantToken: null,
+    hostToken: null,
+    heartbeatId: null,
+    kickedOut: false,
     votingStarted: false,
     currentMovieIndex: 0,
     movies: [],
@@ -133,6 +137,7 @@ async function fetchNameAvailable(sessionId, name) {
         return {
             reachable: true,
             available: data.available === true,
+            code: typeof data.code === 'string' ? data.code : '',
             error: typeof data.error === 'string' ? data.error : ''
         };
     } catch (e) {
@@ -148,6 +153,13 @@ async function checkNameAvailable(sessionId, name) {
     if (!result.reachable) return;
 
     if (!nickContext || !input || input.value.trim() !== name) return;
+
+    if (result.code === 'VOTING_STARTED') {
+        nickTaken = true;
+        setNickStatus('');
+        setNickError(result.error || 'Голосование уже началось — войти нельзя');
+        return;
+    }
 
     if (result.available) {
         nickTaken = false;
@@ -210,6 +222,13 @@ async function confirmNickname() {
         if (err && err.nameTaken) {
             nickTaken = true;
             setNickError(err.message);
+        } else if (err && err.votingLocked) {
+            /* Вход в идущее голосование закрыт: закрываем модалку и
+               возвращаем на главный экран, объяснив причину. */
+            closeNicknameModal();
+            showWelcomeScreen();
+            showToast('Голосование уже началось — войти в эту комнату нельзя');
+            return;
         } else {
             setNickError(err.message || 'Не удалось войти. Попробуйте ещё раз.');
         }
@@ -276,12 +295,17 @@ function defaultParticipantName(isHost) {
     return isHost ? `Host-${suffix}` : `Guest-${suffix}`;
 }
 
-async function registerParticipant(sessionId, isHost, name) {
-    const participantName = (name && name.trim()) || defaultParticipantName(isHost);
+async function registerParticipant(sessionId, isHost, name, token) {
+    const participantName = (name || '').trim() || DEFAULT_NAME;
+    const body = { name: participantName };
+    if (token) body.token = token;
+    /* Право хоста подтверждает только серверный токен сессии. */
+    if (isHost === true && state.hostToken) body.hostToken = state.hostToken;
+
     const response = await fetchWithTimeout(`${state.sessionServiceUrl}/${encodeURIComponent(sessionId)}/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: participantName })
+        body: JSON.stringify(body)
     }, 15000);
 
     if (response.ok) {
@@ -296,6 +320,11 @@ async function registerParticipant(sessionId, isHost, name) {
     if (response.status === 409 || code.indexOf('NAME_TAKEN') !== -1) {
         const err = new Error('Этот ник уже занят в зале — выберите другой');
         err.nameTaken = true;
+        throw err;
+    }
+    if (response.status === 403 || code.indexOf('VOTING_STARTED') !== -1) {
+        const err = new Error('Голосование уже началось — войти нельзя');
+        err.votingLocked = true;
         throw err;
     }
 
@@ -315,7 +344,32 @@ function persistParticipantState() {
     if (state.participantName) {
         localStorage.setItem('participantName', state.participantName);
     }
+    if (state.participantToken) {
+        localStorage.setItem('participantToken', state.participantToken);
+    }
     localStorage.setItem('isHost', String(Boolean(state.isHost)));
+    if (state.hostToken) localStorage.setItem('hostToken', state.hostToken);
+}
+
+function getSavedToken() {
+    try { return localStorage.getItem('participantToken') || ''; } catch (e) { return ''; }
+}
+
+/* Сбрасываем только личность в комнате, сохраняя ник для формы. */
+function clearParticipantSession() {
+    stopHeartbeat();
+    try { sessionStorage.removeItem('yakTabSession'); } catch (e) {}
+    localStorage.removeItem('participantId');
+    localStorage.removeItem('sessionId');
+    localStorage.removeItem('participantToken');
+    localStorage.removeItem('isHost');
+    localStorage.removeItem('hostToken');
+    state.hostToken = null;
+    state.participantId = null;
+    state.sessionId = null;
+    state.participantToken = null;
+    state.isHost = false;
+    state.leaveSent = false;
 }
 
 function upsertCurrentParticipant(joinedAt = null) {
@@ -335,15 +389,17 @@ function upsertCurrentParticipant(joinedAt = null) {
 }
 
 function clearParticipantState() {
+    stopHeartbeat();
     try {
         sessionStorage.removeItem('yakTabSession');
         sessionStorage.removeItem('yakUnloading');
-        sessionStorage.removeItem('yakUnloadSession');
     } catch (e) {}
     localStorage.removeItem('participantId');
     localStorage.removeItem('sessionId');
     localStorage.removeItem('participantName');
+    localStorage.removeItem('participantToken');
     localStorage.removeItem('isHost');
+    state.participantToken = null;
 }
 
 function startParticipantsPolling() {
@@ -384,7 +440,9 @@ function formatJoinedAt(joinedAt) {
 }
 
 async function markSessionVotingStarted() {
-    const response = await fetchWithTimeout(`${state.sessionServiceUrl}/${encodeURIComponent(state.sessionId)}/start`, {
+    const query = `requesterId=${encodeURIComponent(state.participantId || '')}`
+        + (state.hostToken ? `&hostToken=${encodeURIComponent(state.hostToken)}` : '');
+    const response = await fetchWithTimeout(`${state.sessionServiceUrl}/${encodeURIComponent(state.sessionId)}/start?${query}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-store'
@@ -481,26 +539,29 @@ async function resolveSessionFromInput(rawValue) {
 /* ── Общий вход в комнату после успешной регистрации ── */
 function enterRoom(session, participant, isHost, toastText) {
     state.sessionId = session.sessionId;
-    state.sessionCode = session.code;
-    state.isHost = isHost;
+    state.sessionCode = session.code || state.sessionCode;
+    state.isHost = isHost === true;
     state.participantId = participant.participantId;
     state.participantName = participant.name;
+    state.participantToken = participant.token || state.participantToken;
     state.currentMovieIndex = Number.isInteger(session.currentMovieIndex) ? session.currentMovieIndex : 0;
     state.voted = false;
     state.votedDecision = null;
     state.participantVotes = {};
     state.roundResolved = false;
     state.leaveSent = false;
-    state.movieFetchIdx = null;
+    state.kickedOut = false;
     state.participantsSig = null;
     state.participantsPrevIds = [];
-    try { sessionStorage.setItem('yakTabSession', state.sessionId); } catch (e) {}
+    state.movieFetchIdx = null;
+    try { sessionStorage.setItem('yakTabSession', session.sessionId); } catch (e) {}
 
     persistParticipantState();
     upsertCurrentParticipant(participant.joinedAt || null);
 
     showWaitingScreen();
     connectWebSocket();
+    startHeartbeat();
 
     if (toastText) showToast(toastText);
 }
@@ -529,6 +590,7 @@ async function createSession() {
         }
 
         const data = await response.json();
+        state.hostToken = data.hostToken || null;
         /* Сессия создана — теперь спрашиваем ник и входим */
         openNicknameModal({
             sessionId: data.sessionId,
@@ -559,6 +621,7 @@ async function joinSession() {
 
     try {
         const session = await resolveSessionFromInput(link);
+        if (!ensureJoinable(session)) return;
         /* Сессия найдена — спрашиваем ник (с проверкой занятости) и входим */
         openNicknameModal({
             sessionId: session.sessionId,
@@ -571,12 +634,23 @@ async function joinSession() {
     }
 }
 
+/* В идущее голосование вход закрыт: не открываем модалку зря. */
+function ensureJoinable(session) {
+    if (session && session.votingStarted === true) {
+        showToast('Голосование уже началось — войти в эту комнату нельзя');
+        showWelcomeScreen();
+        return false;
+    }
+    return true;
+}
+
 async function joinSessionDirect() {
     try {
         const token = state.sessionCode || new URLSearchParams(window.location.search).get('session');
         if (!token) return;
 
         const session = await resolveSessionFromInput(token);
+        if (!ensureJoinable(session)) return;
 
         /* Ник спрашиваем у всех, кто открыл ссылку в этой вкладке.
            Сохранённый ник лишь подставляется в поле. */
@@ -597,11 +671,30 @@ async function loadParticipants() {
     if (!listEl) return;
 
     try {
-        const response = await fetchWithTimeout(`${state.sessionServiceUrl}/${encodeURIComponent(state.sessionId)}/participants`, {}, 10000);
+        const query = state.participantId
+            ? `?participantId=${encodeURIComponent(state.participantId)}`
+            : '';
+        const response = await fetchWithTimeout(
+            `${state.sessionServiceUrl}/${encodeURIComponent(state.sessionId)}/participants${query}`,
+            {}, 10000
+        );
+
+        /* 404 — нас уже нет в комнате: кикнули, истёк таймаут или комната закрыта. */
+        if (response.status === 404 && state.participantId) {
+            handleRemovedFromRoom();
+            return;
+        }
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const data = await response.json();
         state.participants = Array.isArray(data.participants) ? data.participants : [];
+
+        /* Сервер удалил нашу запись — не изображаем присутствие дальше. */
+        if (state.participantId && !state.participants.some(p => p.id === state.participantId)) {
+            handleRemovedFromRoom();
+            return;
+        }
+
         updateParticipantsList();
 
         if (data.votingStarted === true
@@ -656,7 +749,7 @@ function updateParticipantsList() {
         return;
     }
 
-    state.participants.forEach((p, i) => {
+    state.participants.forEach((p) => {
         const row = document.createElement('div');
         if (isNewcomer(p.id)) {
             row.className = 'seat-plaque plaque-new';
@@ -674,6 +767,13 @@ function updateParticipantsList() {
 
         row.append(bulb, name);
 
+        if (p.host) {
+            const badge = document.createElement('span');
+            badge.className = 'plaque-host';
+            badge.textContent = 'хост';
+            row.appendChild(badge);
+        }
+
         const time = formatJoinedAt(p.joinedAt);
         if (time) {
             const t = document.createElement('span');
@@ -681,11 +781,55 @@ function updateParticipantsList() {
             t.textContent = time;
             row.appendChild(t);
         }
+
+        /* Исключать может только хост и только других участников. */
+        if (state.isHost && !p.host && p.id !== state.participantId) {
+            const kick = document.createElement('button');
+            kick.type = 'button';
+            kick.className = 'plaque-kick';
+            kick.textContent = 'Исключить';
+            kick.title = 'Исключить участника из комнаты';
+            kick.addEventListener('click', () => kickParticipant(p.id, p.name));
+            row.appendChild(kick);
+        }
+
         listEl.appendChild(row);
     });
 
     if (typeof window.renderSeatMap === 'function') {
         window.renderSeatMap();
+    }
+}
+
+/* Хост исключает участника: DELETE .../participants/{id}/host */
+async function kickParticipant(participantId, participantName) {
+    if (!state.isHost || !participantId) return;
+
+    try {
+        const url = `${state.sessionServiceUrl}/${encodeURIComponent(state.sessionId)}`
+            + `/participants/${encodeURIComponent(participantId)}/host`
+            + `?requesterId=${encodeURIComponent(state.participantId)}`
+            + (state.hostToken ? `&hostToken=${encodeURIComponent(state.hostToken)}` : '');
+        const response = await fetchWithTimeout(url, { method: 'DELETE' }, 10000);
+
+        if (response.status === 403) {
+            showToast('Исключать участников может только хост');
+            return;
+        }
+        if (response.status === 400) {
+            showToast('Нельзя исключить самого себя');
+            return;
+        }
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data = await response.json().catch(() => ({}));
+        state.participants = Array.isArray(data.participants) ? data.participants : state.participants;
+        state.participantsSig = null;
+        updateParticipantsList();
+        showToast(`${participantName || 'Участник'} исключён из комнаты`);
+    } catch (err) {
+        console.warn('kickParticipant error:', err);
+        showToast('Не удалось исключить участника');
     }
 }
 
@@ -745,16 +889,26 @@ function connectWebSocket() {
                 loadParticipants();
             });
 
-            /* Уведомление о вышедшем участнике */
+            /* Участник покинул комнату: reason = LEFT | KICKED | STALE */
             state.stompClient.subscribe(`/topic/session/${state.sessionId}/left`, (msg) => {
                 try {
                     const p = JSON.parse(msg.body);
-                    if (p && p.participantId !== state.participantId && p.participantName) {
-                        showToast(`${p.participantName} вышел из комнаты`);
+                    if (!p) return;
+
+                    if (p.participantId && p.participantId === state.participantId) {
+                        handleRemovedFromRoom(p.reason || 'KICKED');
+                        return;
+                    }
+
+                    if (p.participantName) {
+                        const reason = p.reason === 'KICKED'
+                            ? 'исключён из комнаты'
+                            : (p.reason === 'STALE' ? 'отключился' : 'вышел из комнаты');
+                        showToast(`${p.participantName} ${reason}`);
                     }
                     loadParticipants();
-                } catch (e) {
-                    console.warn('left subscription parse error', e);
+                } catch (error) {
+                    console.warn('leave event handling error:', error);
                 }
             });
 
@@ -1255,28 +1409,14 @@ function pasteFromClipboard() {
 }
 
 /* ── Выход из комнаты ──
-   navigator.sendBeacon не поддерживает DELETE (только POST),
-   поэтому используем fetch c keepalive: запрос дозавершится
-   даже при закрытии вкладки. */
-function leaveRoomRequest(sessionId, participantId) {
-    if (!sessionId || !participantId) return;
-    sendBeaconSafe(sessionId, participantId);
-}
-
+   Перезагрузка и закрытие вкладки больше не удаляют участника:
+   за это отвечает heartbeat. DELETE шлётся только при явном выходе. */
 function sendLeaveBeacon() {
     if (state.leaveSent) return;
     if (!state.sessionId || !state.participantId) return;
-    sessionStorage.setItem('yakUnloading', '1');
-    sessionStorage.setItem('yakUnloadSession', state.sessionId);
     sendBeaconSafe(state.sessionId, state.participantId);
     state.leaveSent = true;
 }
-
-/* pagehide срабатывает и при перезагрузке страницы, поэтому
-   выход подтверждаем после загрузки: если вкладка вернулась —
-   снимаем отметку и остаёмся в сессии. */
-window.addEventListener('pagehide', sendLeaveBeacon);
-window.addEventListener('beforeunload', sendLeaveBeacon);
 
 function sendBeaconSafe(sessionId, participantId) {
     const url = `${state.sessionServiceUrl}/${encodeURIComponent(sessionId)}/participants/${encodeURIComponent(participantId)}`;
@@ -1285,41 +1425,103 @@ function sendBeaconSafe(sessionId, participantId) {
     } catch (e) { /* ignore */ }
 }
 
-/* Возврат после перезагрузки/возврата из bfcache: участник уже удалён
-   на бэкенде, поэтому входим заново под сохранённым ником. */
+/* ── Heartbeat ──
+   Пока вкладка открыта, каждые 5 секунд отмечаемся живыми. Сервер
+   удаляет участников, не подававших признаков жизни дольше 25 секунд. */
+function startHeartbeat() {
+    stopHeartbeat();
+    if (!state.sessionId || !state.participantId) return;
+
+    const tick = () => {
+        if (!state.sessionId || !state.participantId || document.hidden) return;
+        fetchWithTimeout(
+            `${state.sessionServiceUrl}/${encodeURIComponent(state.sessionId)}/heartbeat`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ participantId: state.participantId })
+            },
+            6000
+        ).then(resp => {
+            if (resp.status === 404) {
+                handleRemovedFromRoom();
+            }
+        }).catch(() => {});
+    };
+
+    tick();
+    state.heartbeatId = setInterval(tick, 5000);
+}
+
+function stopHeartbeat() {
+    if (state.heartbeatId) {
+        clearInterval(state.heartbeatId);
+        state.heartbeatId = null;
+    }
+}
+
+/* Участника удалили: кикнул хост, истёк таймаут или комната закрыта. */
+function handleRemovedFromRoom(reason) {
+    if (state.kickedOut) return;
+    state.kickedOut = true;
+
+    stopHeartbeat();
+    stopParticipantsPolling();
+
+    if (state.stompClient && state.connected) {
+        try { state.stompClient.disconnect(); } catch {}
+        state.connected = false;
+    }
+
+    const text = reason === 'KICKED'
+        ? 'Хост исключил вас из комнаты'
+        : 'Вы больше не в комнате — сессия завершена или истекла';
+
+    clearParticipantState();
+    state.sessionId = null;
+    state.sessionCode = null;
+    state.participantId = null;
+    state.participantName = null;
+    state.votingStarted = false;
+    state.voted = false;
+
+    showWelcomeScreen();
+    showToast(text);
+}
+
+/* Возврат после перезагрузки: участник остался на бэкенде, поэтому
+   входим под сохранённым токеном. Если голосование уже идёт, сервер
+   пустит только своего — чужой токен получит VOTING_STARTED. */
 async function restoreAfterReload() {
-    const wasUnloading = sessionStorage.getItem('yakUnloading') === '1';
-    if (!wasUnloading) return false;
-
-    sessionStorage.removeItem('yakUnloading');
-    sessionStorage.removeItem('yakUnloadSession');
-
     const sessionId = state.sessionId;
+    const token = getSavedToken();
     const name = state.participantName || getSavedNickname();
-    if (!sessionId || !name) {
-        clearParticipantState();
-        state.sessionId = null;
-        state.participantId = null;
+    if (!sessionId || !token || !name) {
         return false;
     }
 
     try {
-        const session = await resolveSessionFromInput(sessionId);
-        const participant = await registerParticipant(sessionId, state.isHost, name);
+        const participant = await registerParticipant(sessionId, state.isHost, name, token);
         state.leaveSent = false;
-        enterRoom(session, participant, state.isHost, null);
+        state.kickedOut = false;
+        enterRoom({
+            sessionId: sessionId,
+            code: participant.code,
+            currentMovieIndex: participant.currentMovieIndex
+        }, participant, participant.host === true, null);
+        if (participant.votingStarted === true) {
+            beginVotingStart();
+        }
         return true;
     } catch (e) {
         console.warn('restoreAfterReload failed:', e);
-        clearParticipantState();
-        state.sessionId = null;
-        state.participantId = null;
-        state.leaveSent = false;
+        clearParticipantSession();
         return false;
     }
 }
 
 function exitSession() {
+    stopHeartbeat();
     stopParticipantsPolling();
 
     if (state.stompClient && state.connected) {
@@ -1346,6 +1548,7 @@ function exitSession() {
     state.votingInitPromise = null;
     state.votingInitAttempts = 0;
     state.movieFetchIdx = null;
+    state.kickedOut = false;
     setStartButtonLoading(false);
 
     clearParticipantState();
@@ -1405,6 +1608,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         state.sessionId = savedSid;
         state.participantName = savedParticipantName;
         state.isHost = savedIsHost;
+        state.participantToken = getSavedToken() || null;
+        state.hostToken = localStorage.getItem('hostToken') || null;
     }
 
     switchTab('join');
