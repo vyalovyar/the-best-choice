@@ -6,14 +6,12 @@ COPY gateway/pom.xml gateway/
 COPY session/pom.xml session/
 COPY voting/pom.xml voting/
 
-RUN --mount=type=cache,target=/root/.m2 \
-    MAVEN_OPTS="-Dhttps.protocols=TLSv1.2 -Dhttp.keepAlive=false" \
+RUN MAVEN_OPTS="-Dhttps.protocols=TLSv1.2 -Dhttp.keepAlive=false" \
     mvn dependency:go-offline -pl voting -am
 
 COPY . .
 
-RUN --mount=type=cache,target=/root/.m2 \
-    MAVEN_OPTS="-Dhttps.protocols=TLSv1.2 -Dhttp.keepAlive=false" \
+RUN MAVEN_OPTS="-Dhttps.protocols=TLSv1.2 -Dhttp.keepAlive=false" \
     mvn clean package -DskipTests -pl voting -am
 
 FROM eclipse-temurin:21-jre-alpine
